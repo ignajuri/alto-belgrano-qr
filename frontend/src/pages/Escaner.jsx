@@ -136,11 +136,11 @@ export default function Escaner() {
         {vista === 'escaner' && (
           <div style={es.scanCard}>
 
-            {/* El div del lector SIEMPRE está en el DOM para que html5-qrcode lo encuentre */}
-            <div style={{ display: escaneando ? 'block' : 'none' }}>
-              <div id="lector-qr" style={es.lector}></div>
+            {/* lector-qr siempre en el DOM, altura 0 cuando no está activo */}
+            <div id="lector-qr" style={escaneando ? es.lector : es.lectorOculto}></div>
+            {escaneando && (
               <button onClick={detenerEscaner} style={es.btnDetener}>✕ Detener cámara</button>
-            </div>
+            )}
 
             {!escaneando && !cargando && !resultado && (
               <div style={es.idleState}>
@@ -266,14 +266,15 @@ const es = {
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', width: '100%', maxWidth: '420px', textAlign: 'center', border: '1px solid #bbf7d0' },
   alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', width: '100%', maxWidth: '420px', textAlign: 'center', border: '1px solid #fecaca' },
   scanCard: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' },
+  lector: { width: '100%' },
+  lectorOculto: { height: 0, overflow: 'hidden' },
   idleState: { padding: '48px 32px', textAlign: 'center' },
   idleIconBox: { width: '80px', height: '80px', backgroundColor: '#eff6ff', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '36px' },
   idleIcon: { fontSize: '36px' },
   idleTitulo: { fontSize: '20px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px' },
   idleDesc: { fontSize: '14px', color: '#64748b', margin: '0 0 28px', lineHeight: 1.6 },
   btnEscanear: { width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
-  lector: { width: '100%' },
-  btnDetener: { margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '15px', cursor: 'pointer', fontWeight: '500' },
+  btnDetener: { margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '15px', cursor: 'pointer', fontWeight: '500', width: 'calc(100% - 32px)' },
   cargandoArea: { padding: '60px 32px', textAlign: 'center' },
   cargandoCircle: { fontSize: '40px', marginBottom: '16px', display: 'block' },
   cargandoText: { fontSize: '16px', color: '#64748b', margin: 0 },
@@ -298,4 +299,3 @@ const es = {
   btnPrimario: { padding: '10px 20px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' },
   btnSecundario: { padding: '10px 20px', backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' },
 }
-
