@@ -135,6 +135,13 @@ export default function Escaner() {
 
         {vista === 'escaner' && (
           <div style={es.scanCard}>
+
+            {/* El div del lector SIEMPRE está en el DOM para que html5-qrcode lo encuentre */}
+            <div style={{ display: escaneando ? 'block' : 'none' }}>
+              <div id="lector-qr" style={es.lector}></div>
+              <button onClick={detenerEscaner} style={es.btnDetener}>✕ Detener cámara</button>
+            </div>
+
             {!escaneando && !cargando && !resultado && (
               <div style={es.idleState}>
                 <div style={es.idleIconBox}>
@@ -145,13 +152,6 @@ export default function Escaner() {
                 <button onClick={iniciarEscaner} style={es.btnEscanear}>
                   📷 Activar cámara
                 </button>
-              </div>
-            )}
-
-            {escaneando && (
-              <div style={es.scannerArea}>
-                <div id="lector-qr" style={es.lector}></div>
-                <button onClick={detenerEscaner} style={es.btnDetener}>✕ Detener cámara</button>
               </div>
             )}
 
@@ -272,8 +272,7 @@ const es = {
   idleTitulo: { fontSize: '20px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px' },
   idleDesc: { fontSize: '14px', color: '#64748b', margin: '0 0 28px', lineHeight: 1.6 },
   btnEscanear: { width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
-  scannerArea: { display: 'flex', flexDirection: 'column', gap: '0' },
-  lector: { width: '100%', borderRadius: '0' },
+  lector: { width: '100%' },
   btnDetener: { margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '15px', cursor: 'pointer', fontWeight: '500' },
   cargandoArea: { padding: '60px 32px', textAlign: 'center' },
   cargandoCircle: { fontSize: '40px', marginBottom: '16px', display: 'block' },
@@ -299,3 +298,4 @@ const es = {
   btnPrimario: { padding: '10px 20px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' },
   btnSecundario: { padding: '10px 20px', backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' },
 }
+
