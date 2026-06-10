@@ -12,7 +12,7 @@ export default function Escaner() {
   const [perfil, setPerfil] = useState({ nombre: '', email: '', password: '', confirmarPassword: '' })
   const scannerRef = useRef(null)
   const navigate = useNavigate()
-  const usuario = JSON.parse(localStorage.getItem('usuario') || '{}')
+  const usuario = JSON.parse(sessionStorage.getItem('usuario') || '{}')
 
   const formatearHora = (fechaStr) => {
     const str = fechaStr.endsWith('Z') ? fechaStr : fechaStr + 'Z'
@@ -94,7 +94,7 @@ export default function Escaner() {
       if (perfil.password) datos.password = perfil.password
       const res = await api.put(`/usuarios/${usuario.id}`, datos)
       const usuarioActualizado = { ...usuario, nombre: res.data.usuario.nombre, email: res.data.usuario.email }
-      localStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
+      sessionStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
       mostrarMensaje('Perfil actualizado correctamente')
       setPerfil({ ...perfil, password: '', confirmarPassword: '' })
     } catch (err) {
@@ -105,8 +105,8 @@ export default function Escaner() {
   }
 
   const cerrarSesion = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('usuario')
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('usuario')
     navigate('/login')
   }
 
@@ -135,8 +135,6 @@ export default function Escaner() {
 
         {vista === 'escaner' && (
           <div style={es.scanCard}>
-
-            {/* lector-qr siempre en el DOM, altura 0 cuando no está activo */}
             <div id="lector-qr" style={escaneando ? es.lector : es.lectorOculto}></div>
             {escaneando && (
               <button onClick={detenerEscaner} style={es.btnDetener}>✕ Detener cámara</button>

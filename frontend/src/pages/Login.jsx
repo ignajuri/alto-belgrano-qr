@@ -15,8 +15,8 @@ export default function Login() {
     setCargando(true)
     try {
       const res = await api.post('/auth/login', { email, password })
-      localStorage.setItem('token', res.data.token)
-      localStorage.setItem('usuario', JSON.stringify(res.data.usuario))
+      sessionStorage.setItem('token', res.data.token)
+      sessionStorage.setItem('usuario', JSON.stringify(res.data.usuario))
       if (res.data.usuario.rol === 'admin') {
         navigate('/dashboard')
       } else {

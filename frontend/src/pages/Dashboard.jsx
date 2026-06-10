@@ -13,7 +13,7 @@ export default function Dashboard() {
   const [usuarioEditando, setUsuarioEditando] = useState(null)
   const navigate = useNavigate()
 
-  const usuarioLocal = JSON.parse(localStorage.getItem('usuario') || '{}')
+  const usuarioLocal = JSON.parse(sessionStorage.getItem('usuario') || '{}')
 
   const [nuevoEvento, setNuevoEvento] = useState({
     nombre_evento: '', fecha: '', limite_invitados: '',
@@ -120,7 +120,7 @@ export default function Dashboard() {
       if (miPerfil.password) datos.password = miPerfil.password
       const res = await api.put(`/usuarios/${usuarioLocal.id}`, datos)
       const usuarioActualizado = { ...usuarioLocal, nombre: res.data.usuario.nombre, email: res.data.usuario.email }
-      localStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
+      sessionStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
       mostrarMensaje('Perfil actualizado correctamente')
       setMiPerfil({ ...miPerfil, password: '', confirmarPassword: '' })
     } catch (err) {
@@ -188,8 +188,8 @@ export default function Dashboard() {
   }
 
   const cerrarSesion = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('usuario')
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('usuario')
     navigate('/login')
   }
 
@@ -264,7 +264,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* MODAL EDICION USUARIO */}
           {usuarioEditando && (
             <div style={e.modalOverlay}>
               <div style={e.modal}>
@@ -304,7 +303,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VISTA EVENTOS */}
           {vistaActual === 'eventos' && (
             <div>
               {eventos.length === 0 ? (
@@ -335,7 +333,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VISTA CREAR EVENTO */}
           {vistaActual === 'crear' && (
             <div style={e.formContenedor}>
               <form onSubmit={crearEvento}>
@@ -363,7 +360,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VISTA INVITADOS */}
           {vistaActual === 'invitados' && eventoSeleccionado && (
             <div>
               <div style={e.statsRow}>
@@ -434,7 +430,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VISTA USUARIOS */}
           {vistaActual === 'usuarios' && (
             <div style={e.dosColumnas}>
               <div style={e.formContenedor}>
@@ -495,7 +490,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VISTA PERFIL */}
           {vistaActual === 'perfil' && (
             <div style={e.formContenedor}>
               <form onSubmit={guardarMiPerfil}>

@@ -4,7 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Escaner from './pages/Escaner'
 
 const PrivateRoute = ({ children }) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   return token ? children : <Navigate to="/login" />
 }
 
@@ -30,3 +30,4 @@ function App() {
 }
 
 export default App
+
