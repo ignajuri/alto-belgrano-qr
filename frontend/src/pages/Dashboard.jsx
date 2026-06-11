@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export default function Dashboard() {
   const [eventos, setEventos] = useState([])
@@ -11,7 +12,9 @@ export default function Dashboard() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [usuarioEditando, setUsuarioEditando] = useState(null)
+  const [menuAbierto, setMenuAbierto] = useState(false)
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
 
   const usuarioLocal = JSON.parse(sessionStorage.getItem('usuario') || '{}')
 
@@ -19,15 +22,12 @@ export default function Dashboard() {
     nombre_evento: '', fecha: '', limite_invitados: '',
     anfitrion_nombre: '', anfitrion_telefono: ''
   })
-
   const [nuevoUsuario, setNuevoUsuario] = useState({
     nombre: '', email: '', password: '', rol: 'guardia'
   })
-
   const [formEdicion, setFormEdicion] = useState({
     nombre: '', email: '', password: ''
   })
-
   const [miPerfil, setMiPerfil] = useState({
     nombre: '', email: '', password: '', confirmarPassword: ''
   })
@@ -131,6 +131,7 @@ export default function Dashboard() {
   const handleNavPerfil = () => {
     setVistaActual('perfil')
     setMiPerfil({ nombre: usuarioLocal.nombre, email: usuarioLocal.email, password: '', confirmarPassword: '' })
+    setMenuAbierto(false)
   }
 
   const toggleUsuario = async (id) => {
@@ -198,6 +199,12 @@ export default function Dashboard() {
     return vistaActual === key
   }
 
+  const navegar = (vista, extra) => {
+    setVistaActual(vista)
+    if (extra) extra()
+    setMenuAbierto(false)
+  }
+
   const tituloPagina = {
     eventos: 'Eventos',
     crear: 'Nuevo evento',
@@ -206,10 +213,350 @@ export default function Dashboard() {
     perfil: 'Mi perfil'
   }
 
+  const contenido = (
+    <div style={isMobile ? e.contenidoMobile : e.contenido}>
+      {mensaje && (
+        <div style={mensaje.includes('Error') || mensaje.includes('no') ? e.alertaError : e.alerta}>
+          {mensaje}
+        </div>
+      )}
+
+      {usuarioEditando && (
+        <div style={e.modalOverlay}>
+          <div style={e.modal}>
+            <div style={e.modalHeader}>
+              <h3 style={e.modalTitulo}>Editar usuario</h3>
+              <button type="button" onClick={() => setUsuarioEditando(null)} style={e.modalClose}>✕</button>
+            </div>
+            <form onSubmit={guardarEdicion}>
+              <div style={e.modalBody}>
+                <div style={e.campo}>
+                  <label style={e.label}>Nombre</label>
+                  <input type="text" value={formEdicion.nombre}
+                    onChange={ev => setFormEdicion({ ...formEdicion, nombre: ev.target.value })}
+                    style={e.input} required />
+                </div>
+                <div style={e.campo}>
+                  <label style={e.label}>Email</label>
+                  <input type="email" value={formEdicion.email}
+                    onChange={ev => setFormEdicion({ ...formEdicion, email: ev.target.value })}
+                    style={e.input} required />
+                </div>
+                <div style={e.campo}>
+                  <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
+                  <input type="password" value={formEdicion.password}
+                    onChange={ev => setFormEdicion({ ...formEdicion, password: ev.target.value })}
+                    style={e.input} />
+                </div>
+              </div>
+              <div style={e.modalBotones}>
+                <button type="button" onClick={() => setUsuarioEditando(null)} style={e.btnSecundario}>Cancelar</button>
+                <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                  {cargando ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {vistaActual === 'eventos' && (
+        <div>
+          {eventos.length === 0 ? (
+            <div style={e.emptyState}>
+              <div style={e.emptyIcon}>📅</div>
+              <p style={e.emptyTitulo}>No hay eventos registrados</p>
+              <p style={e.emptyDesc}>Creá el primer evento desde el menú.</p>
+            </div>
+          ) : (
+            eventos.map(ev => (
+              <div key={ev.id} style={isMobile ? e.cardMobile : e.card}>
+                {!isMobile && <div style={e.cardAccent}></div>}
+                <div style={e.cardInfo}>
+                  <h3 style={e.cardTitulo}>{ev.nombre_evento}</h3>
+                  <div style={isMobile ? e.cardMetaMobile : e.cardMeta}>
+                    <span style={e.cardMetaItem}>📅 {new Date(ev.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                    <span style={e.cardMetaItem}>👥 Límite: {ev.limite_invitados}</span>
+                    <span style={e.cardMetaItem}>🎉 {ev.anfitrion_nombre}</span>
+                  </div>
+                </div>
+                <div style={isMobile ? e.cardAccionesMobile : e.cardAcciones}>
+                  <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>Ver invitados</button>
+                  <button onClick={() => eliminarEvento(ev.id)} style={e.btnDanger}>Eliminar</button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {vistaActual === 'crear' && (
+        <div style={isMobile ? e.formContenedorMobile : e.formContenedor}>
+          <form onSubmit={crearEvento}>
+            {[
+              { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cumpleaños de Victoria' },
+              { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
+              { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 150' },
+              { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Victoria García' },
+              { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
+            ].map(({ label, key, type, placeholder }) => (
+              <div key={key} style={e.campo}>
+                <label style={e.label}>{label}</label>
+                <input type={type} value={nuevoEvento[key]} placeholder={placeholder}
+                  onChange={ev => setNuevoEvento({ ...nuevoEvento, [key]: ev.target.value })}
+                  style={e.input} required={key !== 'anfitrion_telefono'} />
+              </div>
+            ))}
+            <div style={e.formFooter}>
+              <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
+              <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                {cargando ? 'Creando...' : 'Crear evento'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {vistaActual === 'invitados' && eventoSeleccionado && (
+        <div>
+          <div style={isMobile ? e.statsRowMobile : e.statsRow}>
+            <div style={e.statCard}>
+              <span style={e.statNum}>{invitados.length}</span>
+              <span style={e.statLabel}>Total</span>
+            </div>
+            <div style={{ ...e.statCard, borderTop: '3px solid #16a34a' }}>
+              <span style={{ ...e.statNum, color: '#16a34a' }}>{invitados.filter(i => i.ingresado).length}</span>
+              <span style={e.statLabel}>Ingresaron</span>
+            </div>
+            <div style={{ ...e.statCard, borderTop: '3px solid #dc2626' }}>
+              <span style={{ ...e.statNum, color: '#dc2626' }}>{invitados.filter(i => !i.ingresado).length}</span>
+              <span style={e.statLabel}>Pendientes</span>
+            </div>
+          </div>
+
+          <div style={isMobile ? e.importarBoxMobile : e.importarBox}>
+            <div>
+              <p style={e.importarTitulo}>Importar lista de invitados</p>
+              {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
+            </div>
+            <div>
+              <input type="file" accept=".xlsx" id="file-input"
+                onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
+                style={{ display: 'none' }} disabled={cargando} />
+              <label htmlFor="file-input" style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer' }}>
+                {cargando ? 'Procesando...' : '📤 Subir Excel'}
+              </label>
+            </div>
+          </div>
+
+          {invitados.length === 0 ? (
+            <div style={e.emptyState}>
+              <div style={e.emptyIcon}>👥</div>
+              <p style={e.emptyTitulo}>No hay invitados cargados</p>
+              <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
+            </div>
+          ) : isMobile ? (
+            // Mobile: cards instead of table
+            invitados.map(inv => (
+              <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: '600', fontSize: '15px', color: '#0f172a' }}>{inv.nombre} {inv.apellido}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
+                  </div>
+                  <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span>
+                  {inv.fecha_ingreso && <span style={e.badgeGris}>{formatearHora(inv.fecha_ingreso)}</span>}
+                  {inv.qr_enviado && <span style={e.badgeVerde}>QR enviado</span>}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div style={e.tableWrapper}>
+              <table style={e.tabla}>
+                <thead>
+                  <tr>
+                    {['Nombre', 'Apellido', 'DNI', 'Email', 'QR', 'Estado', 'Ingreso', ''].map(col => (
+                      <th key={col} style={e.th}>{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {invitados.map(inv => (
+                    <tr key={inv.id} style={inv.ingresado ? e.filaIngresado : {}}>
+                      <td style={e.td}>{inv.nombre}</td>
+                      <td style={e.td}>{inv.apellido}</td>
+                      <td style={e.td}>{inv.dni}</td>
+                      <td style={e.td}>{inv.email}</td>
+                      <td style={e.td}>{inv.qr_enviado ? <span style={e.badgeVerde}>Enviado</span> : <span style={e.badgeGris}>Pendiente</span>}</td>
+                      <td style={e.td}><span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span></td>
+                      <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
+                      <td style={e.td}>
+                        <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {vistaActual === 'usuarios' && (
+        <div style={isMobile ? {} : e.dosColumnas}>
+          <div style={isMobile ? e.formContenedorMobile : e.formContenedor}>
+            <h3 style={e.formTitulo}>Crear nuevo usuario</h3>
+            <form onSubmit={crearUsuario}>
+              {[
+                { label: 'Nombre completo', key: 'nombre', type: 'text', placeholder: 'Ej: Juan García' },
+                { label: 'Email', key: 'email', type: 'email', placeholder: 'juan@ejemplo.com' },
+                { label: 'Contraseña', key: 'password', type: 'password', placeholder: '••••••••' },
+              ].map(({ label, key, type, placeholder }) => (
+                <div key={key} style={e.campo}>
+                  <label style={e.label}>{label}</label>
+                  <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
+                    onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
+                    style={e.input} required />
+                </div>
+              ))}
+              <div style={e.campo}>
+                <label style={e.label}>Rol</label>
+                <select value={nuevoUsuario.rol}
+                  onChange={ev => setNuevoUsuario({ ...nuevoUsuario, rol: ev.target.value })}
+                  style={e.input}>
+                  <option value="guardia">Guardia</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                {cargando ? 'Creando...' : 'Crear usuario'}
+              </button>
+            </form>
+          </div>
+
+          <div style={isMobile ? { marginTop: '20px' } : {}}>
+            <h3 style={e.formTitulo}>Usuarios del sistema</h3>
+            {usuarios.map(u => (
+              <div key={u.id} style={{ ...(isMobile ? e.cardMobile : e.card), opacity: u.activo ? 1 : 0.6 }}>
+                {!isMobile && <div style={e.cardAccent}></div>}
+                <div style={e.userCardInfo}>
+                  <div style={e.userAvatarSmall}>{u.nombre[0].toUpperCase()}</div>
+                  <div style={e.cardInfo}>
+                    <h3 style={e.cardTitulo}>{u.nombre}</h3>
+                    <div style={e.cardMeta}>
+                      {!isMobile && <span style={e.cardMetaItem}>{u.email}</span>}
+                      <span style={u.rol === 'admin' ? e.badgeAdmin : e.badgeGuardia}>{u.rol}</span>
+                      <span style={u.activo ? e.badgeVerde : e.badgeGris}>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={e.cardAcciones}>
+                  <button onClick={() => abrirEdicion(u)} style={e.btnSecundario}>Editar</button>
+                  <button onClick={() => toggleUsuario(u.id)} style={u.activo ? e.btnDanger : e.btnSuccess}>
+                    {u.activo ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {vistaActual === 'perfil' && (
+        <div style={isMobile ? e.formContenedorMobile : e.formContenedor}>
+          <form onSubmit={guardarMiPerfil}>
+            <div style={e.campo}>
+              <label style={e.label}>Nombre</label>
+              <input type="text" value={miPerfil.nombre}
+                onChange={ev => setMiPerfil({ ...miPerfil, nombre: ev.target.value })}
+                style={e.input} required />
+            </div>
+            <div style={e.campo}>
+              <label style={e.label}>Email</label>
+              <input type="email" value={miPerfil.email}
+                onChange={ev => setMiPerfil({ ...miPerfil, email: ev.target.value })}
+                style={e.input} required />
+            </div>
+            <div style={e.campo}>
+              <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
+              <input type="password" value={miPerfil.password}
+                onChange={ev => setMiPerfil({ ...miPerfil, password: ev.target.value })}
+                style={e.input} />
+            </div>
+            {miPerfil.password && (
+              <div style={e.campo}>
+                <label style={e.label}>Confirmar nueva contraseña</label>
+                <input type="password" value={miPerfil.confirmarPassword}
+                  onChange={ev => setMiPerfil({ ...miPerfil, confirmarPassword: ev.target.value })}
+                  style={e.input} />
+              </div>
+            )}
+            <div style={e.formFooter}>
+              <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
+              <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                {cargando ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+
+  if (isMobile) {
+    return (
+      <div style={e.appMobile}>
+        {/* MOBILE HEADER */}
+        <div style={e.headerMobile}>
+          <div style={e.headerMobileIzq}>
+            {vistaActual === 'invitados' && (
+              <button onClick={() => setVistaActual('eventos')} style={e.btnVolverMobile}>←</button>
+            )}
+            <div style={e.sidebarLogoCircle}>AB</div>
+            <h2 style={e.topbarTituloMobile}>{tituloPagina[vistaActual]}</h2>
+          </div>
+          <button onClick={() => setMenuAbierto(!menuAbierto)} style={e.hamburger}>
+            {menuAbierto ? '✕' : '☰'}
+          </button>
+        </div>
+
+        {/* MOBILE MENU OVERLAY */}
+        {menuAbierto && (
+          <div style={e.mobileMenuOverlay} onClick={() => setMenuAbierto(false)}>
+            <div style={e.mobileMenu} onClick={ev => ev.stopPropagation()}>
+              <div style={e.mobileMenuUser}>
+                <div style={e.userAvatar}>{usuarioLocal.nombre?.[0]?.toUpperCase()}</div>
+                <div>
+                  <p style={e.userName}>{usuarioLocal.nombre}</p>
+                  <p style={e.userRole}>Administrador</p>
+                </div>
+              </div>
+              {[
+                { key: 'eventos', label: '📋 Eventos' },
+                { key: 'crear', label: '＋ Nuevo evento' },
+                { key: 'usuarios', label: '👤 Usuarios', extra: cargarUsuarios },
+              ].map(item => (
+                <button key={item.key} onClick={() => navegar(item.key, item.extra)}
+                  style={navActivo(item.key) ? e.mobileMenuItemActivo : e.mobileMenuItem}>
+                  {item.label}
+                </button>
+              ))}
+              <button onClick={handleNavPerfil} style={e.mobileMenuItem}>👤 Mi perfil</button>
+              <button onClick={cerrarSesion} style={e.mobileMenuSalir}>Cerrar sesión</button>
+            </div>
+          </div>
+        )}
+
+        {contenido}
+      </div>
+    )
+  }
+
   return (
     <div style={e.app}>
-
-      {/* SIDEBAR */}
       <aside style={e.sidebar}>
         <div style={e.sidebarHeader}>
           <div style={e.sidebarLogoCircle}>AB</div>
@@ -218,7 +565,6 @@ export default function Dashboard() {
             <p style={e.sidebarSub}>Administración</p>
           </div>
         </div>
-
         <nav style={e.sidebarNav}>
           <button onClick={() => setVistaActual('eventos')} style={navActivo('eventos') ? e.navItemActivo : e.navItem}>
             <span>📋</span> Eventos
@@ -230,7 +576,6 @@ export default function Dashboard() {
             <span>👤</span> Usuarios
           </button>
         </nav>
-
         <div style={e.sidebarFooter}>
           <div style={e.userCard}>
             <div style={e.userAvatar}>{usuarioLocal.nombre?.[0]?.toUpperCase()}</div>
@@ -245,8 +590,6 @@ export default function Dashboard() {
           </div>
         </div>
       </aside>
-
-      {/* MAIN */}
       <main style={e.main}>
         <div style={e.topbar}>
           <div style={e.topbarIzq}>
@@ -256,279 +599,7 @@ export default function Dashboard() {
             <h2 style={e.topbarTitulo}>{tituloPagina[vistaActual]}</h2>
           </div>
         </div>
-
-        <div style={e.contenido}>
-          {mensaje && (
-            <div style={mensaje.includes('Error') || mensaje.includes('no') ? e.alertaError : e.alerta}>
-              {mensaje}
-            </div>
-          )}
-
-          {usuarioEditando && (
-            <div style={e.modalOverlay}>
-              <div style={e.modal}>
-                <div style={e.modalHeader}>
-                  <h3 style={e.modalTitulo}>Editar usuario</h3>
-                  <button type="button" onClick={() => setUsuarioEditando(null)} style={e.modalClose}>✕</button>
-                </div>
-                <form onSubmit={guardarEdicion}>
-                  <div style={e.modalBody}>
-                    <div style={e.campo}>
-                      <label style={e.label}>Nombre</label>
-                      <input type="text" value={formEdicion.nombre}
-                        onChange={ev => setFormEdicion({ ...formEdicion, nombre: ev.target.value })}
-                        style={e.input} required />
-                    </div>
-                    <div style={e.campo}>
-                      <label style={e.label}>Email</label>
-                      <input type="email" value={formEdicion.email}
-                        onChange={ev => setFormEdicion({ ...formEdicion, email: ev.target.value })}
-                        style={e.input} required />
-                    </div>
-                    <div style={e.campo}>
-                      <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-                      <input type="password" value={formEdicion.password}
-                        onChange={ev => setFormEdicion({ ...formEdicion, password: ev.target.value })}
-                        style={e.input} />
-                    </div>
-                  </div>
-                  <div style={e.modalBotones}>
-                    <button type="button" onClick={() => setUsuarioEditando(null)} style={e.btnSecundario}>Cancelar</button>
-                    <button type="submit" style={e.btnPrimario} disabled={cargando}>
-                      {cargando ? 'Guardando...' : 'Guardar cambios'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {vistaActual === 'eventos' && (
-            <div>
-              {eventos.length === 0 ? (
-                <div style={e.emptyState}>
-                  <div style={e.emptyIcon}>📅</div>
-                  <p style={e.emptyTitulo}>No hay eventos registrados</p>
-                  <p style={e.emptyDesc}>Creá el primer evento desde el menú lateral.</p>
-                </div>
-              ) : (
-                eventos.map(ev => (
-                  <div key={ev.id} style={e.card}>
-                    <div style={e.cardAccent}></div>
-                    <div style={e.cardInfo}>
-                      <h3 style={e.cardTitulo}>{ev.nombre_evento}</h3>
-                      <div style={e.cardMeta}>
-                        <span style={e.cardMetaItem}>📅 {new Date(ev.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
-                        <span style={e.cardMetaItem}>👥 Límite: {ev.limite_invitados} personas</span>
-                        <span style={e.cardMetaItem}>🎉 Anfitrión: {ev.anfitrion_nombre}</span>
-                      </div>
-                    </div>
-                    <div style={e.cardAcciones}>
-                      <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>Ver invitados</button>
-                      <button onClick={() => eliminarEvento(ev.id)} style={e.btnDanger}>Eliminar</button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {vistaActual === 'crear' && (
-            <div style={e.formContenedor}>
-              <form onSubmit={crearEvento}>
-                {[
-                  { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cumpleaños de Victoria' },
-                  { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
-                  { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 150' },
-                  { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Victoria García' },
-                  { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
-                ].map(({ label, key, type, placeholder }) => (
-                  <div key={key} style={e.campo}>
-                    <label style={e.label}>{label}</label>
-                    <input type={type} value={nuevoEvento[key]} placeholder={placeholder}
-                      onChange={ev => setNuevoEvento({ ...nuevoEvento, [key]: ev.target.value })}
-                      style={e.input} required={key !== 'anfitrion_telefono'} />
-                  </div>
-                ))}
-                <div style={e.formFooter}>
-                  <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
-                  <button type="submit" style={e.btnPrimario} disabled={cargando}>
-                    {cargando ? 'Creando...' : 'Crear evento'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {vistaActual === 'invitados' && eventoSeleccionado && (
-            <div>
-              <div style={e.statsRow}>
-                <div style={e.statCard}>
-                  <span style={e.statNum}>{invitados.length}</span>
-                  <span style={e.statLabel}>Total invitados</span>
-                </div>
-                <div style={{ ...e.statCard, borderTop: '3px solid #16a34a' }}>
-                  <span style={{ ...e.statNum, color: '#16a34a' }}>{invitados.filter(i => i.ingresado).length}</span>
-                  <span style={e.statLabel}>Ingresaron</span>
-                </div>
-                <div style={{ ...e.statCard, borderTop: '3px solid #dc2626' }}>
-                  <span style={{ ...e.statNum, color: '#dc2626' }}>{invitados.filter(i => !i.ingresado).length}</span>
-                  <span style={e.statLabel}>Pendientes</span>
-                </div>
-              </div>
-
-              <div style={e.importarBox}>
-                <div>
-                  <p style={e.importarTitulo}>Importar lista de invitados</p>
-                  <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>
-                </div>
-                <div>
-                  <input type="file" accept=".xlsx" id="file-input"
-                    onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
-                    style={{ display: 'none' }} disabled={cargando} />
-                  <label htmlFor="file-input" style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer' }}>
-                    {cargando ? 'Procesando...' : '📤 Subir Excel'}
-                  </label>
-                </div>
-              </div>
-
-              {invitados.length === 0 ? (
-                <div style={e.emptyState}>
-                  <div style={e.emptyIcon}>👥</div>
-                  <p style={e.emptyTitulo}>No hay invitados cargados</p>
-                  <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
-                </div>
-              ) : (
-                <div style={e.tableWrapper}>
-                  <table style={e.tabla}>
-                    <thead>
-                      <tr>
-                        {['Nombre', 'Apellido', 'DNI', 'Email', 'QR', 'Estado', 'Ingreso', ''].map(col => (
-                          <th key={col} style={e.th}>{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invitados.map(inv => (
-                        <tr key={inv.id} style={inv.ingresado ? e.filaIngresado : {}}>
-                          <td style={e.td}>{inv.nombre}</td>
-                          <td style={e.td}>{inv.apellido}</td>
-                          <td style={e.td}>{inv.dni}</td>
-                          <td style={e.td}>{inv.email}</td>
-                          <td style={e.td}>{inv.qr_enviado ? <span style={e.badgeVerde}>Enviado</span> : <span style={e.badgeGris}>Pendiente</span>}</td>
-                          <td style={e.td}><span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span></td>
-                          <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
-                          <td style={e.td}>
-                            <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {vistaActual === 'usuarios' && (
-            <div style={e.dosColumnas}>
-              <div style={e.formContenedor}>
-                <h3 style={e.formTitulo}>Crear nuevo usuario</h3>
-                <form onSubmit={crearUsuario}>
-                  {[
-                    { label: 'Nombre completo', key: 'nombre', type: 'text', placeholder: 'Ej: Juan García' },
-                    { label: 'Email', key: 'email', type: 'email', placeholder: 'juan@ejemplo.com' },
-                    { label: 'Contraseña', key: 'password', type: 'password', placeholder: '••••••••' },
-                  ].map(({ label, key, type, placeholder }) => (
-                    <div key={key} style={e.campo}>
-                      <label style={e.label}>{label}</label>
-                      <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
-                        onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
-                        style={e.input} required />
-                    </div>
-                  ))}
-                  <div style={e.campo}>
-                    <label style={e.label}>Rol</label>
-                    <select value={nuevoUsuario.rol}
-                      onChange={ev => setNuevoUsuario({ ...nuevoUsuario, rol: ev.target.value })}
-                      style={e.input}>
-                      <option value="guardia">Guardia</option>
-                      <option value="admin">Administrador</option>
-                    </select>
-                  </div>
-                  <button type="submit" style={e.btnPrimario} disabled={cargando}>
-                    {cargando ? 'Creando...' : 'Crear usuario'}
-                  </button>
-                </form>
-              </div>
-
-              <div>
-                <h3 style={e.formTitulo}>Usuarios del sistema</h3>
-                {usuarios.map(u => (
-                  <div key={u.id} style={{ ...e.card, opacity: u.activo ? 1 : 0.6 }}>
-                    <div style={e.cardAccent}></div>
-                    <div style={e.userCardInfo}>
-                      <div style={e.userAvatarSmall}>{u.nombre[0].toUpperCase()}</div>
-                      <div style={e.cardInfo}>
-                        <h3 style={e.cardTitulo}>{u.nombre}</h3>
-                        <div style={e.cardMeta}>
-                          <span style={e.cardMetaItem}>{u.email}</span>
-                          <span style={u.rol === 'admin' ? e.badgeAdmin : e.badgeGuardia}>{u.rol}</span>
-                          <span style={u.activo ? e.badgeVerde : e.badgeGris}>{u.activo ? 'Activo' : 'Inactivo'}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div style={e.cardAcciones}>
-                      <button onClick={() => abrirEdicion(u)} style={e.btnSecundario}>Editar</button>
-                      <button onClick={() => toggleUsuario(u.id)} style={u.activo ? e.btnDanger : e.btnSuccess}>
-                        {u.activo ? 'Desactivar' : 'Activar'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {vistaActual === 'perfil' && (
-            <div style={e.formContenedor}>
-              <form onSubmit={guardarMiPerfil}>
-                <div style={e.campo}>
-                  <label style={e.label}>Nombre</label>
-                  <input type="text" value={miPerfil.nombre}
-                    onChange={ev => setMiPerfil({ ...miPerfil, nombre: ev.target.value })}
-                    style={e.input} required />
-                </div>
-                <div style={e.campo}>
-                  <label style={e.label}>Email</label>
-                  <input type="email" value={miPerfil.email}
-                    onChange={ev => setMiPerfil({ ...miPerfil, email: ev.target.value })}
-                    style={e.input} required />
-                </div>
-                <div style={e.campo}>
-                  <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-                  <input type="password" value={miPerfil.password}
-                    onChange={ev => setMiPerfil({ ...miPerfil, password: ev.target.value })}
-                    style={e.input} />
-                </div>
-                {miPerfil.password && (
-                  <div style={e.campo}>
-                    <label style={e.label}>Confirmar nueva contraseña</label>
-                    <input type="password" value={miPerfil.confirmarPassword}
-                      onChange={ev => setMiPerfil({ ...miPerfil, confirmarPassword: ev.target.value })}
-                      style={e.input} />
-                  </div>
-                )}
-                <div style={e.formFooter}>
-                  <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
-                  <button type="submit" style={e.btnPrimario} disabled={cargando}>
-                    {cargando ? 'Guardando...' : 'Guardar cambios'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-        </div>
+        {contenido}
       </main>
     </div>
   )
@@ -536,9 +607,10 @@ export default function Dashboard() {
 
 const e = {
   app: { display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  appMobile: { minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
   sidebar: { width: '240px', backgroundColor: '#0f2554', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, height: '100vh', zIndex: 100, boxShadow: '2px 0 8px rgba(0,0,0,0.15)' },
   sidebarHeader: { padding: '20px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '8px' },
-  sidebarLogoCircle: { width: '40px', height: '40px', backgroundColor: '#3b82f6', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '14px', flexShrink: 0 },
+  sidebarLogoCircle: { width: '36px', height: '36px', backgroundColor: '#3b82f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '13px', flexShrink: 0 },
   sidebarNombre: { color: 'white', fontSize: '14px', fontWeight: '600', margin: 0, lineHeight: 1.3 },
   sidebarSub: { color: 'rgba(255,255,255,0.45)', fontSize: '11px', margin: '2px 0 0' },
   sidebarNav: { flex: 1, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '2px' },
@@ -560,8 +632,28 @@ const e = {
   topbarTitulo: { fontSize: '17px', fontWeight: '600', color: '#0f172a', margin: 0 },
   contenido: { padding: '28px 32px', flex: 1 },
   btnVolver: { padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' },
-  alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', border: '1px solid #bbf7d0' },
-  alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', border: '1px solid #fecaca' },
+  // Mobile specific
+  headerMobile: { backgroundColor: '#0f2554', padding: '0 16px', height: '60px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 },
+  headerMobileIzq: { display: 'flex', alignItems: 'center', gap: '10px' },
+  topbarTituloMobile: { fontSize: '15px', fontWeight: '600', color: 'white', margin: 0 },
+  btnVolverMobile: { background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer', padding: '0 4px' },
+  hamburger: { background: 'none', border: 'none', color: 'white', fontSize: '22px', cursor: 'pointer', padding: '8px' },
+  mobileMenuOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 },
+  mobileMenu: { position: 'absolute', top: 0, right: 0, width: '280px', height: '100%', backgroundColor: '#0f2554', display: 'flex', flexDirection: 'column', padding: '16px' },
+  mobileMenuUser: { display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 0 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '12px' },
+  mobileMenuItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 12px', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '15px', border: 'none', background: 'none', width: '100%', textAlign: 'left', borderRadius: '8px' },
+  mobileMenuItemActivo: { display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 12px', color: 'white', cursor: 'pointer', fontSize: '15px', border: 'none', background: 'rgba(59,130,246,0.25)', width: '100%', textAlign: 'left', borderRadius: '8px', fontWeight: '500' },
+  mobileMenuSalir: { marginTop: 'auto', padding: '14px 12px', color: 'rgba(255,100,100,0.8)', cursor: 'pointer', fontSize: '15px', border: 'none', background: 'none', width: '100%', textAlign: 'left', borderRadius: '8px' },
+  contenidoMobile: { padding: '16px' },
+  cardMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '16px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0' },
+  cardMetaMobile: { display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' },
+  cardAccionesMobile: { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0, marginLeft: '12px' },
+  statsRowMobile: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' },
+  importarBoxMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0', gap: '12px' },
+  formContenedorMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0' },
+  // Shared
+  alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #bbf7d0' },
+  alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' },
   card: { backgroundColor: 'white', borderRadius: '12px', marginBottom: '12px', display: 'flex', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' },
   cardAccent: { width: '4px', alignSelf: 'stretch', backgroundColor: '#3b82f6', flexShrink: 0 },
   cardInfo: { flex: 1, padding: '16px 20px' },
@@ -570,14 +662,14 @@ const e = {
   cardMetaItem: { fontSize: '13px', color: '#64748b' },
   cardAcciones: { display: 'flex', gap: '8px', padding: '0 20px', flexShrink: 0 },
   userCardInfo: { flex: 1, display: 'flex', alignItems: 'center', padding: '16px 20px' },
-  emptyState: { backgroundColor: 'white', borderRadius: '12px', padding: '60px 32px', textAlign: 'center', border: '1px solid #e2e8f0' },
-  emptyIcon: { fontSize: '48px', marginBottom: '16px' },
-  emptyTitulo: { fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: '0 0 8px' },
-  emptyDesc: { fontSize: '14px', color: '#64748b', margin: 0 },
+  emptyState: { backgroundColor: 'white', borderRadius: '12px', padding: '40px 24px', textAlign: 'center', border: '1px solid #e2e8f0' },
+  emptyIcon: { fontSize: '40px', marginBottom: '12px' },
+  emptyTitulo: { fontSize: '15px', fontWeight: '600', color: '#0f172a', margin: '0 0 6px' },
+  emptyDesc: { fontSize: '13px', color: '#64748b', margin: 0 },
   statsRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
-  statCard: { backgroundColor: 'white', borderRadius: '12px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', borderTop: '3px solid #3b82f6' },
-  statNum: { display: 'block', fontSize: '28px', fontWeight: '700', color: '#0f172a' },
-  statLabel: { display: 'block', fontSize: '13px', color: '#64748b', marginTop: '4px' },
+  statCard: { backgroundColor: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', borderTop: '3px solid #3b82f6', textAlign: 'center' },
+  statNum: { display: 'block', fontSize: '24px', fontWeight: '700', color: '#0f172a' },
+  statLabel: { display: 'block', fontSize: '12px', color: '#64748b', marginTop: '4px' },
   importarBox: { backgroundColor: 'white', borderRadius: '12px', padding: '20px 24px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gap: '16px' },
   importarTitulo: { fontSize: '14px', fontWeight: '600', color: '#0f172a', margin: '0 0 4px' },
   importarDesc: { fontSize: '13px', color: '#64748b', margin: 0 },
@@ -604,7 +696,7 @@ const e = {
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGuardia: { backgroundColor: '#f3e8ff', color: '#7c3aed', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(2px)' },
-  modal: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' },
+  modal: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', margin: '0 16px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #f1f5f9' },
   modalTitulo: { fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: 0 },
   modalClose: { background: 'none', border: 'none', fontSize: '18px', color: '#94a3b8', cursor: 'pointer', padding: '4px', lineHeight: 1 },
