@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { supabase } from '../supabaseClient'  // ← NUEVO
 
 export default function Dashboard() {
   const [eventos, setEventos] = useState([])
@@ -41,6 +42,32 @@ export default function Dashboard() {
   }
 
   useEffect(() => { cargarEventos() }, [])
+
+  // ── NUEVO: Supabase Realtime ──────────────────────────────────────────────
+  useEffect(() => {
+    if (vistaActual !== 'invitados' || !eventoSeleccionado) return
+
+    const channel = supabase
+      .channel(`invitados-${eventoSeleccionado.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'invitados',
+          filter: `evento_id=eq.${eventoSeleccionado.id}`
+        },
+        (payload) => {
+          setInvitados(prev => prev.map(inv =>
+            inv.id === payload.new.id ? { ...inv, ...payload.new } : inv
+          ))
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [vistaActual, eventoSeleccionado])
+  // ─────────────────────────────────────────────────────────────────────────
 
   const cargarEventos = async () => {
     try {
@@ -356,7 +383,6 @@ export default function Dashboard() {
               <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
             </div>
           ) : isMobile ? (
-            // Mobile: cards instead of table
             invitados.map(inv => (
               <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
@@ -509,7 +535,6 @@ export default function Dashboard() {
   if (isMobile) {
     return (
       <div style={e.appMobile}>
-        {/* MOBILE HEADER */}
         <div style={e.headerMobile}>
           <div style={e.headerMobileIzq}>
             {vistaActual === 'invitados' && (
@@ -523,7 +548,6 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* MOBILE MENU OVERLAY */}
         {menuAbierto && (
           <div style={e.mobileMenuOverlay} onClick={() => setMenuAbierto(false)}>
             <div style={e.mobileMenu} onClick={ev => ev.stopPropagation()}>
@@ -632,7 +656,6 @@ const e = {
   topbarTitulo: { fontSize: '17px', fontWeight: '600', color: '#0f172a', margin: 0 },
   contenido: { padding: '28px 32px', flex: 1 },
   btnVolver: { padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' },
-  // Mobile specific
   headerMobile: { backgroundColor: '#0f2554', padding: '0 16px', height: '60px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 },
   headerMobileIzq: { display: 'flex', alignItems: 'center', gap: '10px' },
   topbarTituloMobile: { fontSize: '15px', fontWeight: '600', color: 'white', margin: 0 },
@@ -651,7 +674,6 @@ const e = {
   statsRowMobile: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' },
   importarBoxMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0', gap: '12px' },
   formContenedorMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0' },
-  // Shared
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #bbf7d0' },
   alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' },
   card: { backgroundColor: 'white', borderRadius: '12px', marginBottom: '12px', display: 'flex', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' },
