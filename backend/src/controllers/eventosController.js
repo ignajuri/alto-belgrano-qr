@@ -11,22 +11,46 @@ const crearEvento = async (req, res) => {
     const { data, error } = await supabase
       .from('eventos')
       .insert([{
-        nombre_evento,
-        fecha,
-        limite_invitados,
-        anfitrion_nombre,
-        anfitrion_telefono: anfitrion_telefono || null,
+        nombre_evento, fecha, limite_invitados,
+        anfitrion_nombre, anfitrion_telefono: anfitrion_telefono || null,
         creado_por: req.usuario.id
       }])
       .select()
       .single()
 
     if (error) throw error
-
     res.status(201).json({ mensaje: 'Evento creado correctamente', evento: data })
   } catch (error) {
     console.error('Error al crear evento:', error)
     res.status(500).json({ error: 'Error al crear el evento' })
+  }
+}
+
+const editarEvento = async (req, res) => {
+  const { id } = req.params
+  const { nombre_evento, fecha, limite_invitados, anfitrion_nombre, anfitrion_telefono } = req.body
+
+  if (!nombre_evento || !fecha || !limite_invitados || !anfitrion_nombre) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios' })
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('eventos')
+      .update({
+        nombre_evento, fecha,
+        limite_invitados: parseInt(limite_invitados),
+        anfitrion_nombre, anfitrion_telefono: anfitrion_telefono || null
+      })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    res.json({ mensaje: 'Evento actualizado correctamente', evento: data })
+  } catch (error) {
+    console.error('Error al editar evento:', error)
+    res.status(500).json({ error: 'Error al editar el evento' })
   }
 }
 
@@ -38,7 +62,6 @@ const listarEventos = async (req, res) => {
       .order('fecha', { ascending: false })
 
     if (error) throw error
-
     res.json({ eventos: data })
   } catch (error) {
     console.error('Error al listar eventos:', error)
@@ -48,7 +71,6 @@ const listarEventos = async (req, res) => {
 
 const obtenerEvento = async (req, res) => {
   const { id } = req.params
-
   try {
     const { data, error } = await supabase
       .from('eventos')
@@ -56,10 +78,7 @@ const obtenerEvento = async (req, res) => {
       .eq('id', id)
       .single()
 
-    if (error || !data) {
-      return res.status(404).json({ error: 'Evento no encontrado' })
-    }
-
+    if (error || !data) return res.status(404).json({ error: 'Evento no encontrado' })
     res.json({ evento: data })
   } catch (error) {
     console.error('Error al obtener evento:', error)
@@ -69,15 +88,9 @@ const obtenerEvento = async (req, res) => {
 
 const eliminarEvento = async (req, res) => {
   const { id } = req.params
-
   try {
-    const { error } = await supabase
-      .from('eventos')
-      .delete()
-      .eq('id', id)
-
+    const { error } = await supabase.from('eventos').delete().eq('id', id)
     if (error) throw error
-
     res.json({ mensaje: 'Evento eliminado correctamente' })
   } catch (error) {
     console.error('Error al eliminar evento:', error)
@@ -85,4 +98,4 @@ const eliminarEvento = async (req, res) => {
   }
 }
 
-module.exports = { crearEvento, listarEventos, obtenerEvento, eliminarEvento }
+module.exports = { crearEvento, editarEvento, listarEventos, obtenerEvento, eliminarEvento }

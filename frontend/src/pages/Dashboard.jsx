@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [usuarioEditando, setUsuarioEditando] = useState(null)
+  const [eventoEditando, setEventoEditando] = useState(null)
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [reEnviando, setReEnviando] = useState(null)
   const navigate = useNavigate()
@@ -29,6 +30,9 @@ export default function Dashboard() {
   })
   const [formEdicion, setFormEdicion] = useState({
     nombre: '', email: '', password: ''
+  })
+  const [formEdicionEvento, setFormEdicionEvento] = useState({
+    nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: ''
   })
   const [miPerfil, setMiPerfil] = useState({
     nombre: '', email: '', password: '', confirmarPassword: ''
@@ -85,6 +89,33 @@ export default function Dashboard() {
       setTimeout(() => setVistaActual('eventos'), 1500)
     } catch (err) {
       mostrarMensaje('Error al crear el evento')
+    } finally { setCargando(false) }
+  }
+
+  const abrirEdicionEvento = (ev) => {
+    setEventoEditando(ev)
+    setFormEdicionEvento({
+      nombre_evento: ev.nombre_evento,
+      fecha: ev.fecha,
+      limite_invitados: ev.limite_invitados,
+      anfitrion_nombre: ev.anfitrion_nombre,
+      anfitrion_telefono: ev.anfitrion_telefono || ''
+    })
+  }
+
+  const guardarEdicionEvento = async (e) => {
+    e.preventDefault()
+    setCargando(true)
+    try {
+      await api.put(`/eventos/${eventoEditando.id}`, {
+        ...formEdicionEvento,
+        limite_invitados: parseInt(formEdicionEvento.limite_invitados)
+      })
+      mostrarMensaje('Evento actualizado correctamente')
+      setEventoEditando(null)
+      await cargarEventos()
+    } catch (err) {
+      mostrarMensaje('Error al actualizar el evento')
     } finally { setCargando(false) }
   }
 
@@ -208,9 +239,7 @@ export default function Dashboard() {
       mostrarMensaje(`✓ QR reenviado a ${nombre}`)
     } catch (err) {
       mostrarMensaje('Error al reenviar el QR')
-    } finally {
-      setReEnviando(null)
-    }
+    } finally { setReEnviando(null) }
   }
 
   const cerrarSesion = () => {
@@ -230,6 +259,11 @@ export default function Dashboard() {
     setMenuAbierto(false)
   }
 
+  const irAlInicio = () => {
+    setVistaActual('eventos')
+    setMenuAbierto(false)
+  }
+
   const tituloPagina = {
     eventos: 'Eventos',
     crear: 'Nuevo evento',
@@ -246,6 +280,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Modal editar usuario */}
       {usuarioEditando && (
         <div style={e.modalOverlay}>
           <div style={e.modal}>
@@ -285,6 +320,44 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Modal editar evento */}
+      {eventoEditando && (
+        <div style={e.modalOverlay}>
+          <div style={e.modal}>
+            <div style={e.modalHeader}>
+              <h3 style={e.modalTitulo}>Editar evento</h3>
+              <button type="button" onClick={() => setEventoEditando(null)} style={e.modalClose}>✕</button>
+            </div>
+            <form onSubmit={guardarEdicionEvento}>
+              <div style={e.modalBody}>
+                {[
+                  { label: 'Nombre del evento', key: 'nombre_evento', type: 'text' },
+                  { label: 'Fecha', key: 'fecha', type: 'date' },
+                  { label: 'Límite de invitados', key: 'limite_invitados', type: 'number' },
+                  { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text' },
+                  { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', opcional: true },
+                ].map(({ label, key, type, opcional }) => (
+                  <div key={key} style={e.campo}>
+                    <label style={e.label}>
+                      {label} {opcional && <span style={e.opcional}>(opcional)</span>}
+                    </label>
+                    <input type={type} value={formEdicionEvento[key]}
+                      onChange={ev => setFormEdicionEvento({ ...formEdicionEvento, [key]: ev.target.value })}
+                      style={e.input} required={!opcional} />
+                  </div>
+                ))}
+              </div>
+              <div style={e.modalBotones}>
+                <button type="button" onClick={() => setEventoEditando(null)} style={e.btnSecundario}>Cancelar</button>
+                <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                  {cargando ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {vistaActual === 'eventos' && (
         <div>
           {eventos.length === 0 ? (
@@ -307,6 +380,7 @@ export default function Dashboard() {
                 </div>
                 <div style={isMobile ? e.cardAccionesMobile : e.cardAcciones}>
                   <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>Ver invitados</button>
+                  <button onClick={() => abrirEdicionEvento(ev)} style={e.btnSecundario}>Editar</button>
                   <button onClick={() => eliminarEvento(ev.id)} style={e.btnDanger}>Eliminar</button>
                 </div>
               </div>
@@ -381,7 +455,6 @@ export default function Dashboard() {
               <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
             </div>
           ) : isMobile ? (
-            // ── Mobile: cards ─────────────────────────────────────────────
             invitados.map(inv => (
               <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
@@ -404,7 +477,6 @@ export default function Dashboard() {
               </div>
             ))
           ) : (
-            // ── Desktop: tabla ─────────────────────────────────────────────
             <div style={e.tableWrapper}>
               <table style={e.tabla}>
                 <thead>
@@ -550,7 +622,7 @@ export default function Dashboard() {
             {vistaActual === 'invitados' && (
               <button onClick={() => setVistaActual('eventos')} style={e.btnVolverMobile}>←</button>
             )}
-            <div style={e.sidebarLogoCircle}>AB</div>
+            <div style={{ ...e.sidebarLogoCircle, cursor: 'pointer' }} onClick={irAlInicio}>AB</div>
             <h2 style={e.topbarTituloMobile}>{tituloPagina[vistaActual]}</h2>
           </div>
           <button onClick={() => setMenuAbierto(!menuAbierto)} style={e.hamburger}>
@@ -593,7 +665,7 @@ export default function Dashboard() {
     <div style={e.app}>
       <aside style={e.sidebar}>
         <div style={e.sidebarHeader}>
-          <div style={e.sidebarLogoCircle}>AB</div>
+          <div style={{ ...e.sidebarLogoCircle, cursor: 'pointer' }} onClick={irAlInicio}>AB</div>
           <div>
             <p style={e.sidebarNombre}>Alto Belgrano</p>
             <p style={e.sidebarSub}>Administración</p>
