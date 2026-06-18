@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { supabase } from '../supabaseClient'  // ← NUEVO
+import { supabase } from '../supabaseClient'
 
 export default function Dashboard() {
   const [eventos, setEventos] = useState([])
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [mensaje, setMensaje] = useState('')
   const [usuarioEditando, setUsuarioEditando] = useState(null)
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const [reEnviando, setReEnviando] = useState(null)
   const navigate = useNavigate()
   const isMobile = useIsMobile()
 
@@ -43,31 +44,16 @@ export default function Dashboard() {
 
   useEffect(() => { cargarEventos() }, [])
 
-  // ── NUEVO: Supabase Realtime ──────────────────────────────────────────────
   useEffect(() => {
     if (vistaActual !== 'invitados' || !eventoSeleccionado) return
-
     const channel = supabase
       .channel(`invitados-${eventoSeleccionado.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'invitados',
-          filter: `evento_id=eq.${eventoSeleccionado.id}`
-        },
-        (payload) => {
-          setInvitados(prev => prev.map(inv =>
-            inv.id === payload.new.id ? { ...inv, ...payload.new } : inv
-          ))
-        }
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invitados', filter: `evento_id=eq.${eventoSeleccionado.id}` },
+        (payload) => { setInvitados(prev => prev.map(inv => inv.id === payload.new.id ? { ...inv, ...payload.new } : inv)) }
       )
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [vistaActual, eventoSeleccionado])
-  // ─────────────────────────────────────────────────────────────────────────
 
   const cargarEventos = async () => {
     try {
@@ -212,6 +198,18 @@ export default function Dashboard() {
       setInvitados(prev => prev.filter(i => i.id !== id))
     } catch (err) {
       mostrarMensaje('Error al eliminar el invitado')
+    }
+  }
+
+  const reenviarQR = async (invitadoId, nombre) => {
+    setReEnviando(invitadoId)
+    try {
+      await api.post(`/eventos/${eventoSeleccionado.id}/invitados/${invitadoId}/reenviar-qr`)
+      mostrarMensaje(`✓ QR reenviado a ${nombre}`)
+    } catch (err) {
+      mostrarMensaje('Error al reenviar el QR')
+    } finally {
+      setReEnviando(null)
     }
   }
 
@@ -383,6 +381,7 @@ export default function Dashboard() {
               <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
             </div>
           ) : isMobile ? (
+            // ── Mobile: cards ─────────────────────────────────────────────
             invitados.map(inv => (
               <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
@@ -390,7 +389,12 @@ export default function Dashboard() {
                     <p style={{ margin: 0, fontWeight: '600', fontSize: '15px', color: '#0f172a' }}>{inv.nombre} {inv.apellido}</p>
                     <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
                   </div>
-                  <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
+                      {reEnviando === inv.id ? '...' : '✉'}
+                    </button>
+                    <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span>
@@ -400,6 +404,7 @@ export default function Dashboard() {
               </div>
             ))
           ) : (
+            // ── Desktop: tabla ─────────────────────────────────────────────
             <div style={e.tableWrapper}>
               <table style={e.tabla}>
                 <thead>
@@ -420,7 +425,12 @@ export default function Dashboard() {
                       <td style={e.td}><span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span></td>
                       <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
                       <td style={e.td}>
-                        <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
+                            {reEnviando === inv.id ? '...' : '✉'}
+                          </button>
+                          <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -713,6 +723,7 @@ const e = {
   btnDanger: { padding: '8px 14px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   btnSuccess: { padding: '8px 14px', backgroundColor: 'white', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   btnEliminarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  btnReenviarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   badgeVerde: { backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGris: { backgroundColor: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },

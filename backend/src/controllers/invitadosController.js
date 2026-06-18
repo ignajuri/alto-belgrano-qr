@@ -77,48 +77,18 @@ const importarInvitados = async (req, res) => {
     const resultados = []
     for (const invitado of invitadosCreados) {
       try {
-        const qrBase64 = await QRCode.toDataURL(invitado.qr_token, {
-          width: 300,
-          margin: 2
-        })
-
+        const qrBase64 = await QRCode.toDataURL(invitado.qr_token, { width: 300, margin: 2 })
         const qrImagen = qrBase64.replace('data:image/png;base64,', '')
 
         await resend.emails.send({
           from: 'Alto Belgrano <onboarding@resend.dev>',
           to: invitado.email,
           subject: `Tu invitación para ${evento.nombre_evento}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-              <h2 style="color: #1a3a6b;">¡Hola ${invitado.nombre}!</h2>
-              <p>Estás invitado/a a <strong>${evento.nombre_evento}</strong>.</p>
-              <p><strong>Fecha:</strong> ${new Date(evento.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-              <p>Presentá este código QR en la entrada del evento:</p>
-              <div style="text-align: center; margin: 30px 0;">
-                <img src="cid:qr-code" alt="Código QR" width="250"/>
-              </div>
-              <p style="color: #666; font-size: 13px;">
-                Este QR es personal e intransferible. Solo puede usarse una vez.
-              </p>
-              <p style="color: #666; font-size: 13px;">
-                Salón Alto Belgrano — Mendoza
-              </p>
-            </div>
-          `,
-          attachments: [
-            {
-              filename: 'qr-invitacion.png',
-              content: qrImagen,
-              content_id: 'qr-code'
-            }
-          ]
+          html: generarHtmlEmail(invitado, evento),
+          attachments: [{ filename: 'qr-invitacion.png', content: qrImagen, content_id: 'qr-code' }]
         })
 
-        await supabase
-          .from('invitados')
-          .update({ qr_enviado: true })
-          .eq('id', invitado.id)
-
+        await supabase.from('invitados').update({ qr_enviado: true }).eq('id', invitado.id)
         resultados.push({ email: invitado.email, estado: 'enviado' })
 
       } catch (errorEmail) {
@@ -135,6 +105,52 @@ const importarInvitados = async (req, res) => {
   } catch (error) {
     console.error('Error al importar invitados:', error)
     res.status(500).json({ error: 'Error al procesar el archivo' })
+  }
+}
+
+const reenviarQR = async (req, res) => {
+  const { id: evento_id, invitadoId } = req.params
+
+  try {
+    const { data: invitado, error: errorInvitado } = await supabase
+      .from('invitados')
+      .select('*')
+      .eq('id', invitadoId)
+      .eq('evento_id', evento_id)
+      .single()
+
+    if (errorInvitado || !invitado) {
+      return res.status(404).json({ error: 'Invitado no encontrado' })
+    }
+
+    const { data: evento, error: errorEvento } = await supabase
+      .from('eventos')
+      .select('*')
+      .eq('id', evento_id)
+      .single()
+
+    if (errorEvento || !evento) {
+      return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    const qrBase64 = await QRCode.toDataURL(invitado.qr_token, { width: 300, margin: 2 })
+    const qrImagen = qrBase64.replace('data:image/png;base64,', '')
+
+    await resend.emails.send({
+      from: 'Alto Belgrano <onboarding@resend.dev>',
+      to: invitado.email,
+      subject: `Tu invitación para ${evento.nombre_evento}`,
+      html: generarHtmlEmail(invitado, evento),
+      attachments: [{ filename: 'qr-invitacion.png', content: qrImagen, content_id: 'qr-code' }]
+    })
+
+    await supabase.from('invitados').update({ qr_enviado: true }).eq('id', invitadoId)
+
+    res.json({ mensaje: `QR reenviado correctamente a ${invitado.email}` })
+
+  } catch (error) {
+    console.error('Error al reenviar QR:', error)
+    res.status(500).json({ error: 'Error al reenviar el QR' })
   }
 }
 
@@ -160,11 +176,7 @@ const listarInvitados = async (req, res) => {
 const eliminarInvitado = async (req, res) => {
   const { invitadoId } = req.params
   try {
-    const { error } = await supabase
-      .from('invitados')
-      .delete()
-      .eq('id', invitadoId)
-
+    const { error } = await supabase.from('invitados').delete().eq('id', invitadoId)
     if (error) throw error
     res.json({ mensaje: 'Invitado eliminado correctamente' })
   } catch (error) {
@@ -173,4 +185,19 @@ const eliminarInvitado = async (req, res) => {
   }
 }
 
-module.exports = { importarInvitados, listarInvitados, eliminarInvitado }
+// ── Helper compartido ────────────────────────────────────────────────────────
+const generarHtmlEmail = (invitado, evento) => `
+  <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+    <h2 style="color: #1a3a6b;">¡Hola ${invitado.nombre}!</h2>
+    <p>Estás invitado/a a <strong>${evento.nombre_evento}</strong>.</p>
+    <p><strong>Fecha:</strong> ${new Date(evento.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+    <p>Presentá este código QR en la entrada del evento:</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <img src="cid:qr-code" alt="Código QR" width="250"/>
+    </div>
+    <p style="color: #666; font-size: 13px;">Este QR es personal e intransferible. Solo puede usarse una vez.</p>
+    <p style="color: #666; font-size: 13px;">Salón Alto Belgrano — Mendoza</p>
+  </div>
+`
+
+module.exports = { importarInvitados, reenviarQR, listarInvitados, eliminarInvitado }
