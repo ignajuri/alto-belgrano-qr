@@ -8,7 +8,6 @@ const validarQR = async (req, res) => {
   }
 
   try {
-    // Buscar el invitado por su qr_token
     const { data: invitado, error } = await supabase
       .from('invitados')
       .select('*, eventos(nombre_evento, fecha)')
@@ -37,13 +36,31 @@ const validarQR = async (req, res) => {
       })
     }
 
+    // Verificar si el QR expiró (vence al final del día siguiente al evento)
+    const fechaEvento = new Date(invitado.eventos.fecha + 'T23:59:59-03:00')
+    const fechaExpiracion = new Date(fechaEvento.getTime() + 24 * 60 * 60 * 1000)
+    const ahora = new Date()
+
+    if (ahora > fechaExpiracion) {
+      return res.status(200).json({
+        valido: false,
+        motivo: 'Este QR ha expirado',
+        color: 'rojo',
+        detalle: {
+          nombre: invitado.nombre,
+          apellido: invitado.apellido,
+          evento: invitado.eventos.nombre_evento
+        }
+      })
+    }
+
     // Registrar el ingreso
-    const ahora = new Date().toISOString()
+    const ahoraISO = new Date().toISOString()
     await supabase
       .from('invitados')
       .update({
         ingresado: true,
-        fecha_ingreso: ahora,
+        fecha_ingreso: ahoraISO,
         validado_por: req.usuario.id
       })
       .eq('id', invitado.id)
