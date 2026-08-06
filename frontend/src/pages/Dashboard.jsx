@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import api from '../services/api'
+import api, { cerrarSesionLocal } from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { supabase } from '../supabaseClient'
+
+const leerUsuarioLocal = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('usuario') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const etiquetaRol = (rol) => (rol === 'admin' ? 'Administrador' : 'Guardia')
 
 export default function Dashboard() {
   const [eventos, setEventos] = useState([])
@@ -19,7 +28,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
 
-  const usuarioLocal = JSON.parse(sessionStorage.getItem('usuario') || '{}')
+  const usuarioLocal = leerUsuarioLocal()
 
   const [nuevoEvento, setNuevoEvento] = useState({
     nombre_evento: '', fecha: '', limite_invitados: '',
@@ -35,7 +44,7 @@ export default function Dashboard() {
     nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: ''
   })
   const [miPerfil, setMiPerfil] = useState({
-    nombre: '', email: '', password: '', confirmarPassword: ''
+    nombre: '', email: '', passwordActual: '', password: '', confirmarPassword: ''
   })
 
   const formatearHora = (fechaStr) => {
@@ -45,19 +54,6 @@ export default function Dashboard() {
     const m = fecha.getUTCMinutes().toString().padStart(2, '0')
     return `${h.toString().padStart(2, '0')}:${m}`
   }
-
-  useEffect(() => { cargarEventos() }, [])
-
-  useEffect(() => {
-    if (vistaActual !== 'invitados' || !eventoSeleccionado) return
-    const channel = supabase
-      .channel(`invitados-${eventoSeleccionado.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invitados', filter: `evento_id=eq.${eventoSeleccionado.id}` },
-        (payload) => { setInvitados(prev => prev.map(inv => inv.id === payload.new.id ? { ...inv, ...payload.new } : inv)) }
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [vistaActual, eventoSeleccionado])
 
   const cargarEventos = async () => {
     try {
@@ -73,6 +69,40 @@ export default function Dashboard() {
     } catch (err) { console.error(err) }
   }
 
+  useEffect(() => {
+    const cargarInicial = async () => {
+      try {
+        const res = await api.get('/eventos')
+        setEventos(res.data.eventos)
+      } catch (err) { console.error(err) }
+    }
+    cargarInicial()
+  }, [])
+
+  // Antes esto era una suscripción de Supabase Realtime con la anon key. Como
+  // las tablas tienen RLS y no hay policy para el rol anon, el servidor nunca
+  // entregaba los eventos: la actualización en vivo no funcionaba. Agregar esa
+  // policy expondría públicamente los qr_token, así que la vía correcta es
+  // consultar al backend, que es quien tiene la service key.
+  useEffect(() => {
+    if (vistaActual !== 'invitados' || !eventoSeleccionado) return
+
+    const eventoId = eventoSeleccionado.id
+    const intervalo = setInterval(async () => {
+      // No consultamos con la pestaña en segundo plano: el guardia en la puerta
+      // no gana nada y le ahorramos requests al backend.
+      if (document.hidden) return
+      try {
+        const res = await api.get(`/eventos/${eventoId}/invitados`)
+        setInvitados(res.data.invitados)
+      } catch {
+        // Un fallo puntual de red no debe cortar el refresco automático.
+      }
+    }, 8000)
+
+    return () => clearInterval(intervalo)
+  }, [vistaActual, eventoSeleccionado])
+
   const mostrarMensaje = (texto) => {
     setMensaje(texto)
     setTimeout(() => setMensaje(''), 3000)
@@ -87,7 +117,7 @@ export default function Dashboard() {
       setNuevoEvento({ nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: '' })
       await cargarEventos()
       setTimeout(() => setVistaActual('eventos'), 1500)
-    } catch (err) {
+    } catch {
       mostrarMensaje('Error al crear el evento')
     } finally { setCargando(false) }
   }
@@ -114,7 +144,7 @@ export default function Dashboard() {
       mostrarMensaje('Evento actualizado correctamente')
       setEventoEditando(null)
       await cargarEventos()
-    } catch (err) {
+    } catch {
       mostrarMensaje('Error al actualizar el evento')
     } finally { setCargando(false) }
   }
@@ -154,27 +184,48 @@ export default function Dashboard() {
 
   const guardarMiPerfil = async (e) => {
     e.preventDefault()
-    if (miPerfil.password && miPerfil.password !== miPerfil.confirmarPassword) {
-      mostrarMensaje('Las contraseñas no coinciden')
-      return
+    if (miPerfil.password) {
+      if (miPerfil.password !== miPerfil.confirmarPassword) {
+        mostrarMensaje('Error: las contraseñas no coinciden')
+        return
+      }
+      if (!miPerfil.passwordActual) {
+        mostrarMensaje('Error: ingresá tu contraseña actual')
+        return
+      }
     }
     setCargando(true)
     try {
       const datos = { nombre: miPerfil.nombre, email: miPerfil.email }
-      if (miPerfil.password) datos.password = miPerfil.password
+      if (miPerfil.password) {
+        datos.password = miPerfil.password
+        datos.password_actual = miPerfil.passwordActual
+      }
       const res = await api.put(`/usuarios/${usuarioLocal.id}`, datos)
+
+      // Cambiar la contraseña invalida todos los tokens previos, incluido el
+      // que estamos usando ahora: hay que volver a iniciar sesión.
+      if (res.data.sesionInvalidada) {
+        mostrarMensaje('Contraseña actualizada. Volvé a iniciar sesión.')
+        setTimeout(() => { cerrarSesionLocal(); navigate('/login') }, 1800)
+        return
+      }
+
       const usuarioActualizado = { ...usuarioLocal, nombre: res.data.usuario.nombre, email: res.data.usuario.email }
       sessionStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
       mostrarMensaje('Perfil actualizado correctamente')
-      setMiPerfil({ ...miPerfil, password: '', confirmarPassword: '' })
+      setMiPerfil({ ...miPerfil, passwordActual: '', password: '', confirmarPassword: '' })
     } catch (err) {
-      mostrarMensaje(err.response?.data?.error || 'Error al actualizar el perfil')
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo actualizar el perfil'))
     } finally { setCargando(false) }
   }
 
   const handleNavPerfil = () => {
     setVistaActual('perfil')
-    setMiPerfil({ nombre: usuarioLocal.nombre, email: usuarioLocal.email, password: '', confirmarPassword: '' })
+    setMiPerfil({
+      nombre: usuarioLocal.nombre || '', email: usuarioLocal.email || '',
+      passwordActual: '', password: '', confirmarPassword: ''
+    })
     setMenuAbierto(false)
   }
 
@@ -207,10 +258,13 @@ export default function Dashboard() {
     setCargando(true)
     try {
       const res = await api.post(`/eventos/${eventoId}/invitados/importar`, formData)
-      mostrarMensaje(`✓ ${res.data.mensaje} — QRs enviados por email`)
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
       await verInvitados(eventoSeleccionado || { id: eventoId })
     } catch (err) {
-      mostrarMensaje('Error al importar el archivo')
+      // El backend detalla qué filas del Excel están mal; conviene mostrarlo.
+      const datos = err.response?.data
+      const detalle = Array.isArray(datos?.detalle) ? ` — ${datos.detalle.slice(0, 3).join('; ')}` : ''
+      mostrarMensaje('Error: ' + (datos?.error || 'no se pudo importar el archivo') + detalle)
     } finally { setCargando(false); e.target.value = '' }
   }
 
@@ -227,7 +281,7 @@ export default function Dashboard() {
     try {
       await api.delete(`/eventos/${eventoSeleccionado.id}/invitados/${id}`)
       setInvitados(prev => prev.filter(i => i.id !== id))
-    } catch (err) {
+    } catch {
       mostrarMensaje('Error al eliminar el invitado')
     }
   }
@@ -237,14 +291,16 @@ export default function Dashboard() {
     try {
       await api.post(`/eventos/${eventoSeleccionado.id}/invitados/${invitadoId}/reenviar-qr`)
       mostrarMensaje(`✓ QR reenviado a ${nombre}`)
-    } catch (err) {
+    } catch {
       mostrarMensaje('Error al reenviar el QR')
     } finally { setReEnviando(null) }
   }
 
-  const cerrarSesion = () => {
-    sessionStorage.removeItem('token')
-    sessionStorage.removeItem('usuario')
+  const cerrarSesion = async () => {
+    // Se avisa al backend para dejar registro en la auditoría; si falla, el
+    // token local se descarta igual.
+    try { await api.post('/auth/logout') } catch { /* ignorado a propósito */ }
+    cerrarSesionLocal()
     navigate('/login')
   }
 
@@ -304,9 +360,13 @@ export default function Dashboard() {
                 </div>
                 <div style={e.campo}>
                   <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-                  <input type="password" value={formEdicion.password}
+                  <input type="password" value={formEdicion.password} autoComplete="new-password"
                     onChange={ev => setFormEdicion({ ...formEdicion, password: ev.target.value })}
                     style={e.input} />
+                  <p style={e.ayuda}>
+                    Mínimo 10 caracteres, con letra y número. Al cambiarla se cierran
+                    las sesiones abiertas de ese usuario.
+                  </p>
                 </div>
               </div>
               <div style={e.modalBotones}>
@@ -527,7 +587,11 @@ export default function Dashboard() {
                   <label style={e.label}>{label}</label>
                   <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
                     onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
-                    style={e.input} required />
+                    style={e.input} required
+                    autoComplete={key === 'password' ? 'new-password' : 'off'} />
+                  {key === 'password' && (
+                    <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
+                  )}
                 </div>
               ))}
               <div style={e.campo}>
@@ -590,17 +654,29 @@ export default function Dashboard() {
             </div>
             <div style={e.campo}>
               <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-              <input type="password" value={miPerfil.password}
+              <input type="password" value={miPerfil.password} autoComplete="new-password"
                 onChange={ev => setMiPerfil({ ...miPerfil, password: ev.target.value })}
                 style={e.input} />
+              <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
             </div>
             {miPerfil.password && (
-              <div style={e.campo}>
-                <label style={e.label}>Confirmar nueva contraseña</label>
-                <input type="password" value={miPerfil.confirmarPassword}
-                  onChange={ev => setMiPerfil({ ...miPerfil, confirmarPassword: ev.target.value })}
-                  style={e.input} />
-              </div>
+              <>
+                <div style={e.campo}>
+                  <label style={e.label}>Confirmar nueva contraseña</label>
+                  <input type="password" value={miPerfil.confirmarPassword} autoComplete="new-password"
+                    onChange={ev => setMiPerfil({ ...miPerfil, confirmarPassword: ev.target.value })}
+                    style={e.input} />
+                </div>
+                <div style={e.campo}>
+                  <label style={e.label}>Contraseña actual</label>
+                  <input type="password" value={miPerfil.passwordActual} autoComplete="current-password"
+                    onChange={ev => setMiPerfil({ ...miPerfil, passwordActual: ev.target.value })}
+                    style={e.input} required />
+                  <p style={e.ayuda}>
+                    Al cambiar la contraseña se cierran todas las sesiones abiertas.
+                  </p>
+                </div>
+              </>
             )}
             <div style={e.formFooter}>
               <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
@@ -637,7 +713,7 @@ export default function Dashboard() {
                 <div style={e.userAvatar}>{usuarioLocal.nombre?.[0]?.toUpperCase()}</div>
                 <div>
                   <p style={e.userName}>{usuarioLocal.nombre}</p>
-                  <p style={e.userRole}>Administrador</p>
+                  <p style={e.userRole}>{etiquetaRol(usuarioLocal.rol)}</p>
                 </div>
               </div>
               {[
@@ -687,7 +763,7 @@ export default function Dashboard() {
             <div style={e.userAvatar}>{usuarioLocal.nombre?.[0]?.toUpperCase()}</div>
             <div style={e.userInfo}>
               <p style={e.userName}>{usuarioLocal.nombre}</p>
-              <p style={e.userRole}>Administrador</p>
+              <p style={e.userRole}>{etiquetaRol(usuarioLocal.rol)}</p>
             </div>
           </div>
           <div style={e.sidebarBtns}>
@@ -788,6 +864,7 @@ const e = {
   campo: { marginBottom: '16px' },
   label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' },
   opcional: { color: '#9ca3af', fontWeight: '400', fontSize: '12px' },
+  ayuda: { fontSize: '12px', color: '#64748b', margin: '6px 0 0', lineHeight: 1.4 },
   input: { width: '100%', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white' },
   formFooter: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' },
   btnPrimario: { padding: '10px 20px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' },

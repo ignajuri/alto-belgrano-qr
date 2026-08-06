@@ -1,10 +1,15 @@
 const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
+const config = require('./env')
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-)
+// Cliente con la SERVICE KEY: bypassea RLS. Esta clave NUNCA debe salir del
+// backend ni aparecer en el bundle del frontend. Todas las tablas tienen RLS
+// activo y solo policies para service_role, así que este es el único camino
+// de acceso a los datos.
+const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+})
 
-module.exports = supabase  
-// Al usar module.exports, cualquier otro archivo del proyecto puede importar esta conexión con un simple require('../config/supabase') sin tener que volver a configurarla.
+module.exports = supabase

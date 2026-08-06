@@ -3,9 +3,37 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Escaner from './pages/Escaner'
 
-const PrivateRoute = ({ children }) => {
+const leerUsuario = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('usuario') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+// Nota: esto es solo para la experiencia de uso. La autorización real la hace
+// el backend en cada request; el frontend no es una barrera de seguridad y no
+// hay que tratarlo como tal.
+const RutaPrivada = ({ children, rol }) => {
   const token = sessionStorage.getItem('token')
-  return token ? children : <Navigate to="/login" />
+  if (!token) return <Navigate to="/login" replace />
+
+  const usuario = leerUsuario()
+
+  // Un guardia que entra a /dashboard solo vería una pantalla vacía con errores
+  // 403; lo mandamos directo a la pantalla que le corresponde.
+  if (rol && usuario.rol !== rol) {
+    return <Navigate to={usuario.rol === 'admin' ? '/dashboard' : '/escanear'} replace />
+  }
+
+  return children
+}
+
+const Inicio = () => {
+  const token = sessionStorage.getItem('token')
+  if (!token) return <Navigate to="/login" replace />
+  const usuario = leerUsuario()
+  return <Navigate to={usuario.rol === 'admin' ? '/dashboard' : '/escanear'} replace />
 }
 
 function App() {
@@ -14,20 +42,19 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={
-          <PrivateRoute>
+          <RutaPrivada rol="admin">
             <Dashboard />
-          </PrivateRoute>
+          </RutaPrivada>
         } />
         <Route path="/escanear" element={
-          <PrivateRoute>
+          <RutaPrivada>
             <Escaner />
-          </PrivateRoute>
+          </RutaPrivada>
         } />
-        <Route path="*" element={<Navigate to="/login" />} />
+        <Route path="*" element={<Inicio />} />
       </Routes>
     </BrowserRouter>
   )
 }
 
 export default App
-

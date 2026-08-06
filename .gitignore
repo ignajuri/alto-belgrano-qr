@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# Variables de entorno: nunca versionar (contienen la service key y el JWT secret)
+.env
+.env.*
+!.env.example
+
+# Archivos de prueba con datos personales reales
+*.xlsx
+!plantilla-invitados.xlsx
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

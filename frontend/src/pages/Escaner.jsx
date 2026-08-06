@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
-import api from '../services/api'
+import api, { cerrarSesionLocal } from '../services/api'
+
+const leerUsuarioLocal = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('usuario') || '{}')
+  } catch {
+    return {}
+  }
+}
 
 export default function Escaner() {
   const [escaneando, setEscaneando] = useState(false)
@@ -9,10 +17,18 @@ export default function Escaner() {
   const [cargando, setCargando] = useState(false)
   const [vista, setVista] = useState('escaner')
   const [mensaje, setMensaje] = useState('')
-  const [perfil, setPerfil] = useState({ nombre: '', email: '', password: '', confirmarPassword: '' })
+  const [perfil, setPerfil] = useState({ nombre: '', email: '', passwordActual: '', password: '', confirmarPassword: '' })
+  const [eventos, setEventos] = useState([])
+  const [eventoId, setEventoId] = useState('')
+  const [cargandoEventos, setCargandoEventos] = useState(true)
   const scannerRef = useRef(null)
+  // El callback del escáner se registra una sola vez al arrancar la cámara;
+  // este ref le da acceso al evento vigente sin recrear el escáner.
+  const eventoIdRef = useRef('')
   const navigate = useNavigate()
-  const usuario = JSON.parse(sessionStorage.getItem('usuario') || '{}')
+  const usuario = leerUsuarioLocal()
+
+  useEffect(() => { eventoIdRef.current = eventoId }, [eventoId])
 
   const formatearHora = (fechaStr) => {
     const str = fechaStr.endsWith('Z') ? fechaStr : fechaStr + 'Z'
@@ -28,6 +44,24 @@ export default function Escaner() {
         scannerRef.current.stop().catch(() => {})
       }
     }
+  }, [])
+
+  // Los eventos activos son los que están dentro de su ventana de validez.
+  // El guardia elige sobre cuál escanea; el backend rechaza cualquier QR que
+  // pertenezca a otro evento.
+  useEffect(() => {
+    const cargarEventos = async () => {
+      try {
+        const res = await api.get('/eventos/activos')
+        setEventos(res.data.eventos)
+        if (res.data.eventos.length === 1) setEventoId(res.data.eventos[0].id)
+      } catch {
+        setEventos([])
+      } finally {
+        setCargandoEventos(false)
+      }
+    }
+    cargarEventos()
   }, [])
 
   const iniciarEscaner = async () => {
@@ -46,7 +80,7 @@ export default function Escaner() {
         () => {}
       )
       setEscaneando(true)
-    } catch (err) {
+    } catch {
       setResultado({ valido: false, motivo: 'No se pudo acceder a la cámara. Verificá los permisos.', color: 'rojo' })
     }
   }
@@ -62,10 +96,13 @@ export default function Escaner() {
   const validarToken = async (token) => {
     setCargando(true)
     try {
-      const res = await api.post('/validar', { token })
+      const res = await api.post('/validar', { token, evento_id: eventoIdRef.current || undefined })
       setResultado(res.data)
     } catch (err) {
-      setResultado({ valido: false, motivo: 'Error al validar. Intentá de nuevo.', color: 'rojo' })
+      const datos = err.response?.data
+      setResultado(datos?.motivo
+        ? datos
+        : { valido: false, motivo: datos?.error || 'Error al validar. Intentá de nuevo.', color: 'rojo' })
     } finally {
       setCargando(false)
     }
@@ -78,35 +115,56 @@ export default function Escaner() {
 
   const handleNavPerfil = () => {
     if (escaneando) detenerEscaner()
-    setPerfil({ nombre: usuario.nombre, email: usuario.email, password: '', confirmarPassword: '' })
+    setPerfil({
+      nombre: usuario.nombre || '', email: usuario.email || '',
+      passwordActual: '', password: '', confirmarPassword: ''
+    })
     setVista('perfil')
   }
 
   const guardarPerfil = async (e) => {
     e.preventDefault()
-    if (perfil.password && perfil.password !== perfil.confirmarPassword) {
-      mostrarMensaje('Las contraseñas no coinciden')
-      return
+    if (perfil.password) {
+      if (perfil.password !== perfil.confirmarPassword) {
+        mostrarMensaje('Error: las contraseñas no coinciden')
+        return
+      }
+      if (!perfil.passwordActual) {
+        mostrarMensaje('Error: ingresá tu contraseña actual')
+        return
+      }
     }
     setCargando(true)
     try {
       const datos = { nombre: perfil.nombre, email: perfil.email }
-      if (perfil.password) datos.password = perfil.password
+      if (perfil.password) {
+        datos.password = perfil.password
+        datos.password_actual = perfil.passwordActual
+      }
       const res = await api.put(`/usuarios/${usuario.id}`, datos)
+
+      // Cambiar la contraseña revoca todos los tokens previos, incluido este.
+      if (res.data.sesionInvalidada) {
+        mostrarMensaje('Contraseña actualizada. Volvé a iniciar sesión.')
+        setTimeout(() => { cerrarSesionLocal(); navigate('/login') }, 1800)
+        return
+      }
+
       const usuarioActualizado = { ...usuario, nombre: res.data.usuario.nombre, email: res.data.usuario.email }
       sessionStorage.setItem('usuario', JSON.stringify(usuarioActualizado))
       mostrarMensaje('Perfil actualizado correctamente')
-      setPerfil({ ...perfil, password: '', confirmarPassword: '' })
+      setPerfil({ ...perfil, passwordActual: '', password: '', confirmarPassword: '' })
     } catch (err) {
-      mostrarMensaje(err.response?.data?.error || 'Error al actualizar el perfil')
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo actualizar el perfil'))
     } finally {
       setCargando(false)
     }
   }
 
-  const cerrarSesion = () => {
-    sessionStorage.removeItem('token')
-    sessionStorage.removeItem('usuario')
+  const cerrarSesion = async () => {
+    if (escaneando) await detenerEscaner()
+    try { await api.post('/auth/logout') } catch { /* ignorado a propósito */ }
+    cerrarSesionLocal()
     navigate('/login')
   }
 
@@ -146,10 +204,40 @@ export default function Escaner() {
                   <span style={es.idleIcon}>⬛</span>
                 </div>
                 <h2 style={es.idleTitulo}>Escanear código QR</h2>
-                <p style={es.idleDesc}>Activá la cámara y apuntá al código QR del invitado para verificar su acceso.</p>
-                <button onClick={iniciarEscaner} style={es.btnEscanear}>
-                  📷 Activar cámara
-                </button>
+
+                {cargandoEventos ? (
+                  <p style={es.idleDesc}>Buscando eventos activos...</p>
+                ) : eventos.length === 0 ? (
+                  <div style={es.avisoSinEventos}>
+                    <p style={{ margin: 0, fontWeight: 600 }}>No hay eventos activos</p>
+                    <p style={{ margin: '6px 0 0', fontSize: '13px' }}>
+                      Los QR solo se pueden validar durante la ventana del evento.
+                      Consultá con administración.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div style={es.campoEvento}>
+                      <label style={es.label}>Evento</label>
+                      <select value={eventoId} onChange={ev => setEventoId(ev.target.value)} style={es.input}>
+                        <option value="">Seleccioná un evento…</option>
+                        {eventos.map(ev => (
+                          <option key={ev.id} value={ev.id}>
+                            {ev.nombre_evento} — {new Date(ev.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p style={es.idleDesc}>
+                      Activá la cámara y apuntá al código QR del invitado. Los QR de
+                      otros eventos se rechazan automáticamente.
+                    </p>
+                    <button onClick={iniciarEscaner} style={eventoId ? es.btnEscanear : es.btnEscanearDeshabilitado}
+                      disabled={!eventoId}>
+                      📷 Activar cámara
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -222,17 +310,27 @@ export default function Escaner() {
                 <label style={es.label}>
                   Nueva contraseña <span style={es.opcional}>(dejar vacío para no cambiar)</span>
                 </label>
-                <input type="password" value={perfil.password}
+                <input type="password" value={perfil.password} autoComplete="new-password"
                   onChange={ev => setPerfil({ ...perfil, password: ev.target.value })}
                   style={es.input} />
+                <p style={es.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
               </div>
               {perfil.password && (
-                <div style={es.campo}>
-                  <label style={es.label}>Confirmar nueva contraseña</label>
-                  <input type="password" value={perfil.confirmarPassword}
-                    onChange={ev => setPerfil({ ...perfil, confirmarPassword: ev.target.value })}
-                    style={es.input} />
-                </div>
+                <>
+                  <div style={es.campo}>
+                    <label style={es.label}>Confirmar nueva contraseña</label>
+                    <input type="password" value={perfil.confirmarPassword} autoComplete="new-password"
+                      onChange={ev => setPerfil({ ...perfil, confirmarPassword: ev.target.value })}
+                      style={es.input} />
+                  </div>
+                  <div style={es.campo}>
+                    <label style={es.label}>Contraseña actual</label>
+                    <input type="password" value={perfil.passwordActual} autoComplete="current-password"
+                      onChange={ev => setPerfil({ ...perfil, passwordActual: ev.target.value })}
+                      style={es.input} required />
+                    <p style={es.ayuda}>Al cambiarla se cierran todas tus sesiones abiertas.</p>
+                  </div>
+                </>
               )}
               <div style={es.formBotones}>
                 <button type="button" onClick={() => setVista('escaner')} style={es.btnSecundario}>
@@ -272,6 +370,10 @@ const es = {
   idleTitulo: { fontSize: '20px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px' },
   idleDesc: { fontSize: '14px', color: '#64748b', margin: '0 0 28px', lineHeight: 1.6 },
   btnEscanear: { width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+  btnEscanearDeshabilitado: { width: '100%', padding: '14px', backgroundColor: '#cbd5e1', color: '#64748b', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'not-allowed' },
+  campoEvento: { marginBottom: '20px', textAlign: 'left' },
+  avisoSinEventos: { backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '10px', padding: '16px', textAlign: 'left' },
+  ayuda: { fontSize: '12px', color: '#64748b', margin: '6px 0 0', lineHeight: 1.4 },
   btnDetener: { margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '15px', cursor: 'pointer', fontWeight: '500', width: 'calc(100% - 32px)' },
   cargandoArea: { padding: '60px 32px', textAlign: 'center' },
   cargandoCircle: { fontSize: '40px', marginBottom: '16px', display: 'block' },
