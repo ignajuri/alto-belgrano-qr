@@ -7,7 +7,8 @@ Notas operativas del endurecimiento de seguridad. Leer antes de desplegar.
 El backend depende de columnas que no existen todavía. Si desplegás el código
 antes de correr la migración, el login va a fallar.
 
-1. **Supabase** → SQL Editor → ejecutar `backend/migrations/001_seguridad.sql`.
+1. **Supabase** → SQL Editor → ejecutar las migraciones de `backend/migrations/`
+   en orden numérico (`001_seguridad.sql`, después `002_retencion_datos.sql`).
 2. **Render** → cargar las variables de entorno nuevas (ver abajo) → redeploy.
 3. **Vercel** → verificar `VITE_API_URL` → redeploy.
 
@@ -101,6 +102,46 @@ Mínimo 10 caracteres, al menos una letra y un número. Hash con bcrypt, coste 1
 - Un admin puede resetear la contraseña de otro usuario sin conocer la anterior;
   queda registrado en `auditoria`.
 
+## Retención de datos personales (Ley 25.326)
+
+La ley pide que los datos se destruyan cuando dejan de ser necesarios para el
+fin con que se recolectaron. Acá ese fin es controlar el acceso a un evento
+puntual, así que una vez pasado el evento no hay razón para conservarlos.
+
+`purgar_invitados_vencidos()` corre **todos los días a las 02:00 (hora
+argentina)** vía pg_cron y borra nombre, apellido, DNI y email de los invitados
+de todo evento cuya ventana de retención haya vencido. Antes de borrar congela
+en la tabla `eventos` dos agregados —`total_invitados` y `total_ingresados`—
+que no identifican a nadie, para no perder la estadística del salón.
+
+**La ventana por defecto es 48 horas** después del fin del día del evento.
+
+> ⚠️ **No bajar de 24 horas.** El QR sigue siendo válido hasta
+> `QR_HORAS_DESPUES` (24 por defecto) después del fin del día del evento. Una
+> retención menor borraría invitados cuyo QR todavía se puede escanear en la
+> puerta. Las 48 horas dejan un día completo de margen para reclamos del tipo
+> "no me dejaron entrar" o "¿cuántos vinieron?".
+
+Para cambiar la ventana (ejemplo a 72 horas):
+
+```sql
+select cron.unschedule('purga-invitados-vencidos');
+select cron.schedule('purga-invitados-vencidos', '0 5 * * *',
+  $$ select public.purgar_invitados_vencidos(72) $$);
+```
+
+Para ejecutarla a mano:
+
+```sql
+select * from public.purgar_invitados_vencidos(48);
+```
+
+Para ver qué eventos siguen conservando datos personales y cuándo se purgan,
+usar la consulta de la sección 6 de `002_retencion_datos.sql`.
+
+En el dashboard, los eventos ya purgados muestran los totales y un aviso en vez
+de la lista nominal, y no permiten importar.
+
 ## Auditoría
 
 Tabla `auditoria`. Registra logins (exitosos y fallidos), bloqueos, altas y bajas
@@ -136,21 +177,7 @@ Estas quedan fuera del código porque dependen de vos:
    solo entrega a la casilla dueña de la cuenta. Con invitados reales los mails
    van a fallar o a spam. Hay que verificar un dominio con SPF, DKIM y DMARC.
 
-2. **Retención de datos personales.** Los invitados (nombre, DNI, email) quedan
-   indefinidamente. La Ley 25.326 pide un plazo definido. Sugerencia: borrar
-   invitados de eventos con más de 12 meses.
-
-   ```sql
-   delete from invitados
-   where evento_id in (select id from eventos where fecha < current_date - interval '12 months');
-   ```
-
-3. **Historial de git.** Los archivos `prueba.xlsx` e `invitados_prueba.xlsx`
-   fueron sacados del seguimiento, pero siguen en los commits anteriores con
-   emails reales. Para purgarlos del historial hace falta reescribirlo
-   (`git filter-repo`), lo que obliga a un push forzado. Decisión tuya.
-
-4. **Vulnerabilidad residual de dependencias.** `npm audit` reporta 2 moderadas
+2. **Vulnerabilidad residual de dependencias.** `npm audit` reporta 2 moderadas
    en `uuid`, arrastrada por `exceljs`. El fallo afecta a `uuid.v3/v5/v6` cuando
    se les pasa un buffer; `exceljs` solo usa `uuid.v4()`, así que no es
    explotable acá. La única "solución" que ofrece npm es bajar `exceljs` a la

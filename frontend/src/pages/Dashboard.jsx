@@ -328,6 +328,10 @@ export default function Dashboard() {
     perfil: 'Mi perfil'
   }
 
+  // Los eventos cuyos datos personales ya se purgaron muestran agregados en
+  // vez de la lista nominal, que dejó de existir.
+  const purgado = Boolean(eventoSeleccionado?.datos_purgados_en)
+
   const contenido = (
     <div style={isMobile ? e.contenidoMobile : e.contenido}>
       {mensaje && (
@@ -480,35 +484,57 @@ export default function Dashboard() {
         <div>
           <div style={isMobile ? e.statsRowMobile : e.statsRow}>
             <div style={e.statCard}>
-              <span style={e.statNum}>{invitados.length}</span>
+              <span style={e.statNum}>{purgado ? (eventoSeleccionado.total_invitados ?? 0) : invitados.length}</span>
               <span style={e.statLabel}>Total</span>
             </div>
             <div style={{ ...e.statCard, borderTop: '3px solid #16a34a' }}>
-              <span style={{ ...e.statNum, color: '#16a34a' }}>{invitados.filter(i => i.ingresado).length}</span>
+              <span style={{ ...e.statNum, color: '#16a34a' }}>
+                {purgado ? (eventoSeleccionado.total_ingresados ?? 0) : invitados.filter(i => i.ingresado).length}
+              </span>
               <span style={e.statLabel}>Ingresaron</span>
             </div>
             <div style={{ ...e.statCard, borderTop: '3px solid #dc2626' }}>
-              <span style={{ ...e.statNum, color: '#dc2626' }}>{invitados.filter(i => !i.ingresado).length}</span>
-              <span style={e.statLabel}>Pendientes</span>
+              <span style={{ ...e.statNum, color: '#dc2626' }}>
+                {purgado
+                  ? Math.max(0, (eventoSeleccionado.total_invitados ?? 0) - (eventoSeleccionado.total_ingresados ?? 0))
+                  : invitados.filter(i => !i.ingresado).length}
+              </span>
+              <span style={e.statLabel}>{purgado ? 'No asistieron' : 'Pendientes'}</span>
             </div>
           </div>
 
-          <div style={isMobile ? e.importarBoxMobile : e.importarBox}>
-            <div>
-              <p style={e.importarTitulo}>Importar lista de invitados</p>
-              {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
+          {/* Un evento purgado ya no admite importar: sus datos personales se
+              borraron por política de retención y volver a cargarlos no tiene
+              sentido ni sería lícito. */}
+          {!purgado && (
+            <div style={isMobile ? e.importarBoxMobile : e.importarBox}>
+              <div>
+                <p style={e.importarTitulo}>Importar lista de invitados</p>
+                {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
+              </div>
+              <div>
+                <input type="file" accept=".xlsx" id="file-input"
+                  onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
+                  style={{ display: 'none' }} disabled={cargando} />
+                <label htmlFor="file-input" style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer' }}>
+                  {cargando ? 'Procesando...' : '📤 Subir Excel'}
+                </label>
+              </div>
             </div>
-            <div>
-              <input type="file" accept=".xlsx" id="file-input"
-                onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
-                style={{ display: 'none' }} disabled={cargando} />
-              <label htmlFor="file-input" style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer' }}>
-                {cargando ? 'Procesando...' : '📤 Subir Excel'}
-              </label>
-            </div>
-          </div>
+          )}
 
-          {invitados.length === 0 ? (
+          {purgado ? (
+            <div style={e.purgadoBox}>
+              <p style={e.purgadoTitulo}>🔒 Datos personales eliminados</p>
+              <p style={e.purgadoDesc}>
+                Los nombres, DNI y emails de los invitados se borraron
+                automáticamente el {new Date(eventoSeleccionado.datos_purgados_en)
+                  .toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })},
+                según la política de retención de datos personales. Los totales de
+                arriba se conservan porque no identifican a ninguna persona.
+              </p>
+            </div>
+          ) : invitados.length === 0 ? (
             <div style={e.emptyState}>
               <div style={e.emptyIcon}>👥</div>
               <p style={e.emptyTitulo}>No hay invitados cargados</p>
@@ -865,6 +891,9 @@ const e = {
   label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' },
   opcional: { color: '#9ca3af', fontWeight: '400', fontSize: '12px' },
   ayuda: { fontSize: '12px', color: '#64748b', margin: '6px 0 0', lineHeight: 1.4 },
+  purgadoBox: { backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' },
+  purgadoTitulo: { fontSize: '15px', fontWeight: '600', color: '#0f172a', margin: '0 0 8px' },
+  purgadoDesc: { fontSize: '13px', color: '#64748b', margin: 0, lineHeight: 1.6 },
   input: { width: '100%', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white' },
   formFooter: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' },
   btnPrimario: { padding: '10px 20px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' },
