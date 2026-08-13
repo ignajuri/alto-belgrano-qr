@@ -788,26 +788,52 @@ export default function Dashboard() {
           <div style={isMobile ? { marginTop: '20px' } : {}}>
             <h3 style={e.formTitulo}>Usuarios del sistema</h3>
             {usuarios.map(u => (
-              <div key={u.id} style={{ ...(isMobile ? e.cardMobile : e.card), opacity: u.activo ? 1 : 0.6 }}>
-                {!isMobile && <div style={e.cardAccent}></div>}
-                <div style={e.userCardInfo}>
-                  <div style={e.userAvatarSmall}>{u.nombre[0].toUpperCase()}</div>
-                  <div style={e.cardInfo}>
-                    <h3 style={e.cardTitulo}>{u.nombre}</h3>
-                    <div style={e.cardMeta}>
-                      {!isMobile && <span style={e.cardMetaItem}>{u.email}</span>}
-                      <span style={u.rol === 'admin' ? e.badgeAdmin : e.badgeGuardia}>{u.rol}</span>
-                      <span style={u.activo ? e.badgeVerde : e.badgeGris}>{u.activo ? 'Activo' : 'Inactivo'}</span>
+              // En el celular la tarjeta se apila: en fila, el avatar más el
+              // nombre más dos botones que no se encogen no entran en 375px y
+              // desbordaban la pantalla.
+              isMobile ? (
+                <div key={u.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'stretch', opacity: u.activo ? 1 : 0.6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={e.userAvatarSmall}>{u.nombre[0].toUpperCase()}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <h3 style={e.cardTitulo}>{u.nombre}</h3>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b', wordBreak: 'break-all' }}>{u.email}</p>
                     </div>
                   </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <span style={u.rol === 'admin' ? e.badgeAdmin : e.badgeGuardia}>{u.rol}</span>
+                    <span style={u.activo ? e.badgeVerde : e.badgeGris}>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => abrirEdicion(u)} style={{ ...e.btnSecundario, flex: 1 }}>Editar</button>
+                    <button onClick={() => toggleUsuario(u.id)}
+                      style={{ ...(u.activo ? e.btnDanger : e.btnSuccess), flex: 1 }}>
+                      {u.activo ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </div>
                 </div>
-                <div style={e.cardAcciones}>
-                  <button onClick={() => abrirEdicion(u)} style={e.btnSecundario}>Editar</button>
-                  <button onClick={() => toggleUsuario(u.id)} style={u.activo ? e.btnDanger : e.btnSuccess}>
-                    {u.activo ? 'Desactivar' : 'Activar'}
-                  </button>
+              ) : (
+                <div key={u.id} style={{ ...e.card, opacity: u.activo ? 1 : 0.6 }}>
+                  <div style={e.cardAccent}></div>
+                  <div style={e.userCardInfo}>
+                    <div style={e.userAvatarSmall}>{u.nombre[0].toUpperCase()}</div>
+                    <div style={e.cardInfo}>
+                      <h3 style={e.cardTitulo}>{u.nombre}</h3>
+                      <div style={e.cardMeta}>
+                        <span style={e.cardMetaItem}>{u.email}</span>
+                        <span style={u.rol === 'admin' ? e.badgeAdmin : e.badgeGuardia}>{u.rol}</span>
+                        <span style={u.activo ? e.badgeVerde : e.badgeGris}>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={e.cardAcciones}>
+                    <button onClick={() => abrirEdicion(u)} style={e.btnSecundario}>Editar</button>
+                    <button onClick={() => toggleUsuario(u.id)} style={u.activo ? e.btnDanger : e.btnSuccess}>
+                      {u.activo ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )
             ))}
           </div>
         </div>
