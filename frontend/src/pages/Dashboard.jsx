@@ -40,7 +40,7 @@ export default function Dashboard() {
     anfitrion_nombre: '', anfitrion_telefono: ''
   })
   const [nuevoUsuario, setNuevoUsuario] = useState({
-    nombre: '', email: '', password: '', rol: 'guardia'
+    nombre: '', email: '', password: '', confirmarPassword: '', rol: 'guardia'
   })
   const [formEdicion, setFormEdicion] = useState({
     nombre: '', email: '', password: ''
@@ -156,11 +156,22 @@ export default function Dashboard() {
 
   const crearUsuario = async (e) => {
     e.preventDefault()
+    if (nuevoUsuario.password !== nuevoUsuario.confirmarPassword) {
+      mostrarMensaje('Error: las contraseñas no coinciden')
+      return
+    }
     setCargando(true)
     try {
-      await api.post('/usuarios', nuevoUsuario)
+      // confirmarPassword es solo del formulario: se listan los campos que van
+      // al backend en vez de mandar el objeto entero.
+      await api.post('/usuarios', {
+        nombre: nuevoUsuario.nombre,
+        email: nuevoUsuario.email,
+        password: nuevoUsuario.password,
+        rol: nuevoUsuario.rol
+      })
       mostrarMensaje('Usuario creado correctamente')
-      setNuevoUsuario({ nombre: '', email: '', password: '', rol: 'guardia' })
+      setNuevoUsuario({ nombre: '', email: '', password: '', confirmarPassword: '', rol: 'guardia' })
       await cargarUsuarios()
     } catch (err) {
       mostrarMensaje(err.response?.data?.error || 'Error al crear el usuario')
@@ -387,6 +398,11 @@ export default function Dashboard() {
   // Los eventos cuyos datos personales ya se purgaron muestran agregados en
   // vez de la lista nominal, que dejó de existir.
   const purgado = Boolean(eventoSeleccionado?.datos_purgados_en)
+
+  // Solo avisamos cuando ya escribió algo en la confirmación: si no, el error
+  // aparecería apenas empieza a tipear el primer campo.
+  const noCoinciden = Boolean(nuevoUsuario.confirmarPassword) &&
+    nuevoUsuario.password !== nuevoUsuario.confirmarPassword
 
   const contenido = (
     <div style={isMobile ? e.contenidoMobile : e.contenido}>
@@ -728,15 +744,22 @@ export default function Dashboard() {
                 { label: 'Nombre completo', key: 'nombre', type: 'text', placeholder: 'Ej: Juan García' },
                 { label: 'Email', key: 'email', type: 'email', placeholder: 'juan@ejemplo.com' },
                 { label: 'Contraseña', key: 'password', type: 'password', placeholder: '••••••••' },
+                { label: 'Confirmar contraseña', key: 'confirmarPassword', type: 'password', placeholder: '••••••••' },
               ].map(({ label, key, type, placeholder }) => (
                 <div key={key} style={e.campo}>
                   <label style={e.label}>{label}</label>
-                  {key === 'password' ? (
+                  {type === 'password' ? (
                     <>
-                      <CampoPassword valor={nuevoUsuario.password} placeholder={placeholder}
-                        onChange={ev => setNuevoUsuario({ ...nuevoUsuario, password: ev.target.value })}
+                      <CampoPassword valor={nuevoUsuario[key]} placeholder={placeholder}
+                        onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
                         estiloInput={e.input} autoComplete="new-password" required />
-                      <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
+                      {key === 'password' && (
+                        <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
+                      )}
+                      {/* Aviso en vivo: sin esto el error solo aparece al enviar. */}
+                      {key === 'confirmarPassword' && noCoinciden && (
+                        <p style={e.ayudaError}>Las contraseñas no coinciden.</p>
+                      )}
                     </>
                   ) : (
                     <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
@@ -754,7 +777,9 @@ export default function Dashboard() {
                   <option value="admin">Administrador</option>
                 </select>
               </div>
-              <button type="submit" style={e.btnPrimario} disabled={cargando}>
+              <button type="submit"
+                style={noCoinciden ? { ...e.btnPrimario, backgroundColor: '#cbd5e1', cursor: 'not-allowed' } : e.btnPrimario}
+                disabled={cargando || noCoinciden}>
                 {cargando ? 'Creando...' : 'Crear usuario'}
               </button>
             </form>
@@ -1025,6 +1050,7 @@ const e = {
   label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' },
   opcional: { color: '#9ca3af', fontWeight: '400', fontSize: '12px' },
   ayuda: { fontSize: '12px', color: '#64748b', margin: '6px 0 0', lineHeight: 1.4 },
+  ayudaError: { fontSize: '12px', color: '#b91c1c', margin: '6px 0 0', lineHeight: 1.4, fontWeight: '500' },
   purgadoBox: { backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' },
   purgadoTitulo: { fontSize: '15px', fontWeight: '600', color: '#0f172a', margin: '0 0 8px' },
   purgadoDesc: { fontSize: '13px', color: '#64748b', margin: 0, lineHeight: 1.6 },
