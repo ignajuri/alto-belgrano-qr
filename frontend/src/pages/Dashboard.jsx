@@ -662,8 +662,8 @@ export default function Dashboard() {
                   {inv.qr_enviado && <span style={e.badgeVerde}>QR enviado</span>}
                 </div>
                 <div style={e.accionesInvitado}>
-                  <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccion}>Editar</button>
-                  <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccion} disabled={reEnviando === inv.id}>
+                  <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccionVioleta}>Editar</button>
+                  <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccionAzul} disabled={reEnviando === inv.id}>
                     {reEnviando === inv.id ? 'Enviando...' : 'Reenviar QR'}
                   </button>
                   {inv.ingresado && (
@@ -697,8 +697,8 @@ export default function Dashboard() {
                       <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
                       <td style={e.td}>
                         <div style={e.accionesInvitado}>
-                          <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccion}>Editar</button>
-                          <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccion} disabled={reEnviando === inv.id}>
+                          <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccionVioleta}>Editar</button>
+                          <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccionAzul} disabled={reEnviando === inv.id}>
                             {reEnviando === inv.id ? 'Enviando...' : 'Reenviar QR'}
                           </button>
                           {inv.ingresado && (
@@ -1030,10 +1030,16 @@ const e = {
   btnSuccess: { padding: '8px 14px', backgroundColor: 'white', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   // Acciones por invitado, con texto en vez de símbolos: en el celular no hay
   // tooltip que los explique, y "✕" pegado a "✉" invitaba a borrar por error.
+  // Un color por acción, para distinguirlas de un vistazo en la puerta: violeta
+  // editar, azul reenviar, ámbar deshacer, rojo eliminar. Los tonos salen de la
+  // misma paleta que ya usan los badges.
   accionesInvitado: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
-  btnAccion: { padding: '6px 12px', backgroundColor: 'white', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
-  btnAccionAmbar: { padding: '6px 12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
-  btnAccionRojo: { padding: '6px 12px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
+  btnAccionVioleta: { padding: '6px 12px', backgroundColor: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' },
+  btnAccionAzul: { padding: '6px 12px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' },
+  btnAccionAmbar: { padding: '6px 12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' },
+  // Rojo un tono más oscuro que el resto de la paleta: sobre fondo #fef2f2 el
+  // #dc2626 quedaba en 4.41 de contraste, por debajo del mínimo AA de 4.5.
+  btnAccionRojo: { padding: '6px 12px', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' },
   badgeVerde: { backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGris: { backgroundColor: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
