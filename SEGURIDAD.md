@@ -145,7 +145,26 @@ de la lista nominal, y no permiten importar.
 ## Auditoría
 
 Tabla `auditoria`. Registra logins (exitosos y fallidos), bloqueos, altas y bajas
-de usuarios y eventos, importaciones, reenvíos de QR y cada validación.
+de usuarios y eventos, importaciones, reenvíos de QR, cada validación y cada
+ingreso deshecho.
+
+### Deshacer un ingreso
+
+Si un QR se escanea por error, el invitado queda sin poder entrar y su código no
+sirve más. El botón **↩** en la lista de invitados revierte esa marca y devuelve
+el QR a estado válido.
+
+Está restringido a **administradores**, no a guardias: es exactamente la
+operación que permitiría reciclar un QR para hacer entrar a dos personas con el
+mismo código. Cada uso queda en `auditoria` con la acción `ingreso_deshecho`,
+guardando quién lo hizo y cuál era el ingreso previo que se revirtió.
+
+```sql
+select a.creado_en, u.nombre as admin, a.detalle
+from auditoria a left join usuarios u on u.id = a.usuario_id
+where a.accion = 'ingreso_deshecho'
+order by a.creado_en desc;
+```
 
 Consultas útiles:
 

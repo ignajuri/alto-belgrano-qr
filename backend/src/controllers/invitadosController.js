@@ -171,6 +171,76 @@ const listarInvitados = async (req, res) => {
   }
 }
 
+// Revierte un ingreso marcado por error. Sin esto, un QR escaneado de más
+// dejaba al invitado sin forma de entrar: la única salida era borrarlo y
+// re-importarlo, lo que genera un QR nuevo y reenvía el email — inservible con
+// la persona esperando en la puerta.
+//
+// Restringido a administradores a propósito: es la operación que permitiría
+// reciclar un QR para hacer entrar a dos personas con el mismo código. Que
+// tenga que hacerla un admin y quede en auditoría es el control que lo evita.
+const deshacerIngreso = async (req, res) => {
+  const { id: evento_id, invitadoId } = req.params
+
+  if (!esUuid(evento_id) || !esUuid(invitadoId)) {
+    return res.status(400).json({ error: 'Identificador inválido' })
+  }
+
+  try {
+    const { data: invitado } = await supabase
+      .from('invitados')
+      .select('id, nombre, apellido, ingresado, fecha_ingreso, validado_por')
+      .eq('id', invitadoId)
+      .eq('evento_id', evento_id)
+      .maybeSingle()
+
+    if (!invitado) {
+      return res.status(404).json({ error: 'Invitado no encontrado' })
+    }
+
+    if (!invitado.ingresado) {
+      return res.status(400).json({ error: 'Este invitado no figura como ingresado' })
+    }
+
+    // Condicionado a ingresado = true, igual que la validación: si dos admins
+    // lo deshacen a la vez, solo uno afecta la fila.
+    const { data: actualizados, error } = await supabase
+      .from('invitados')
+      .update({ ingresado: false, fecha_ingreso: null, validado_por: null })
+      .eq('id', invitadoId)
+      .eq('evento_id', evento_id)
+      .eq('ingresado', true)
+      .select('id, nombre, apellido, dni, email, qr_enviado, ingresado, fecha_ingreso')
+
+    if (error) throw error
+
+    if (!actualizados || actualizados.length === 0) {
+      return res.status(409).json({ error: 'El ingreso ya había sido deshecho' })
+    }
+
+    await registrar(req, ACCIONES.INGRESO_DESHECHO, {
+      entidad: 'invitados',
+      entidadId: invitadoId,
+      detalle: {
+        evento_id,
+        // Guardamos el ingreso que se revierte: es lo que permite reconstruir
+        // qué pasó si después hay una discusión.
+        fecha_ingreso_previa: invitado.fecha_ingreso,
+        validado_por_previo: invitado.validado_por
+      }
+    })
+
+    res.json({
+      mensaje: `Se deshizo el ingreso de ${invitado.nombre} ${invitado.apellido}. Su QR vuelve a ser válido.`,
+      invitado: actualizados[0]
+    })
+
+  } catch (error) {
+    console.error('Error al deshacer ingreso:', error)
+    res.status(500).json({ error: 'Error al deshacer el ingreso' })
+  }
+}
+
 const eliminarInvitado = async (req, res) => {
   const { id: evento_id, invitadoId } = req.params
 
@@ -203,4 +273,6 @@ const eliminarInvitado = async (req, res) => {
   }
 }
 
-module.exports = { importarInvitados, reenviarQR, listarInvitados, eliminarInvitado }
+module.exports = {
+  importarInvitados, reenviarQR, listarInvitados, eliminarInvitado, deshacerIngreso
+}

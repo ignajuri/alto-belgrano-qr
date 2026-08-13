@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [eventoEditando, setEventoEditando] = useState(null)
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [reEnviando, setReEnviando] = useState(null)
+  const [deshaciendo, setDeshaciendo] = useState(null)
   const navigate = useNavigate()
   const isMobile = useIsMobile()
 
@@ -284,6 +285,26 @@ export default function Dashboard() {
     } catch {
       mostrarMensaje('Error al eliminar el invitado')
     }
+  }
+
+  // Para el caso en que un QR se escanea por error y el invitado queda sin
+  // poder entrar. Devuelve el QR a estado válido.
+  const deshacerIngreso = async (inv) => {
+    const ok = window.confirm(
+      `¿Deshacer el ingreso de ${inv.nombre} ${inv.apellido}?\n\n` +
+      'Su código QR va a volver a ser válido y va a poder usarse de nuevo. ' +
+      'Queda registrado quién hizo este cambio.'
+    )
+    if (!ok) return
+
+    setDeshaciendo(inv.id)
+    try {
+      const res = await api.post(`/eventos/${eventoSeleccionado.id}/invitados/${inv.id}/deshacer-ingreso`)
+      setInvitados(prev => prev.map(i => (i.id === inv.id ? res.data.invitado : i)))
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
+    } catch (err) {
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo deshacer el ingreso'))
+    } finally { setDeshaciendo(null) }
   }
 
   const reenviarQR = async (invitadoId, nombre) => {
@@ -549,6 +570,12 @@ export default function Dashboard() {
                     <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
+                    {inv.ingresado && (
+                      <button onClick={() => deshacerIngreso(inv)} style={e.btnDeshacerSmall}
+                        disabled={deshaciendo === inv.id} title="Deshacer ingreso">
+                        {deshaciendo === inv.id ? '...' : '↩'}
+                      </button>
+                    )}
                     <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
                       {reEnviando === inv.id ? '...' : '✉'}
                     </button>
@@ -584,6 +611,12 @@ export default function Dashboard() {
                       <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
                       <td style={e.td}>
                         <div style={{ display: 'flex', gap: '6px' }}>
+                          {inv.ingresado && (
+                            <button onClick={() => deshacerIngreso(inv)} style={e.btnDeshacerSmall}
+                              disabled={deshaciendo === inv.id} title="Deshacer ingreso">
+                              {deshaciendo === inv.id ? '...' : '↩'}
+                            </button>
+                          )}
                           <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
                             {reEnviando === inv.id ? '...' : '✉'}
                           </button>
@@ -902,6 +935,7 @@ const e = {
   btnSuccess: { padding: '8px 14px', backgroundColor: 'white', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   btnEliminarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   btnReenviarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  btnDeshacerSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   badgeVerde: { backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGris: { backgroundColor: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },

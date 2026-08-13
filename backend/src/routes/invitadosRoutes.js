@@ -2,7 +2,9 @@ const express = require('express')
 const router = express.Router({ mergeParams: true })
 const multer = require('multer')
 const config = require('../config/env')
-const { importarInvitados, reenviarQR, listarInvitados, eliminarInvitado } = require('../controllers/invitadosController')
+const {
+  importarInvitados, reenviarQR, listarInvitados, eliminarInvitado, deshacerIngreso
+} = require('../controllers/invitadosController')
 const { verificarToken, soloAdmin } = require('../middlewares/auth')
 const { limiteImportacion, limiteEmail } = require('../middlewares/rateLimit')
 
@@ -29,6 +31,8 @@ const upload = multer({
 router.post('/importar', verificarToken, soloAdmin, limiteImportacion, upload.single('archivo'), importarInvitados)
 router.get('/', verificarToken, soloAdmin, listarInvitados)
 router.post('/:invitadoId/reenviar-qr', verificarToken, soloAdmin, limiteEmail, reenviarQR)
+// Solo admin: un guardia no debe poder liberar un QR ya usado.
+router.post('/:invitadoId/deshacer-ingreso', verificarToken, soloAdmin, deshacerIngreso)
 router.delete('/:invitadoId', verificarToken, soloAdmin, eliminarInvitado)
 
 module.exports = router
