@@ -612,14 +612,16 @@ export default function Dashboard() {
                 <p style={e.importarTitulo}>Importar lista de invitados</p>
                 {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                <button onClick={abrirNuevoInvitado} style={e.btnSecundario} disabled={cargando}>
-                  ＋ Agregar uno
+              <div style={isMobile ? e.importarBotonesMobile : e.importarBotones}>
+                <button onClick={abrirNuevoInvitado}
+                  style={isMobile ? { ...e.btnSecundario, flex: 1 } : e.btnSecundario} disabled={cargando}>
+                  Agregar invitado
                 </button>
                 <input type="file" accept=".xlsx" id="file-input"
                   onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
                   style={{ display: 'none' }} disabled={cargando} />
-                <label htmlFor="file-input" style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer' }}>
+                <label htmlFor="file-input"
+                  style={{ ...e.btnPrimario, display: 'inline-block', cursor: 'pointer', textAlign: 'center', ...(isMobile ? { flex: 1 } : {}) }}>
                   {cargando ? 'Procesando...' : '📤 Subir Excel'}
                 </label>
               </div>
@@ -645,30 +647,31 @@ export default function Dashboard() {
             </div>
           ) : isMobile ? (
             invitados.map(inv => (
-              <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'flex-start' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: '600', fontSize: '15px', color: '#0f172a' }}>{inv.nombre} {inv.apellido}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    {inv.ingresado && (
-                      <button onClick={() => deshacerIngreso(inv)} style={e.btnDeshacerSmall}
-                        disabled={deshaciendo === inv.id} title="Deshacer ingreso">
-                        {deshaciendo === inv.id ? '...' : '↩'}
-                      </button>
-                    )}
-                    <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnEditarSmall} title="Editar datos">✎</button>
-                    <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
-                      {reEnviando === inv.id ? '...' : '✉'}
-                    </button>
-                    <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
-                  </div>
+              // En el celular los botones van abajo, con el ancho completo de la
+              // tarjeta: con texto no entran al lado del nombre, y arriba a la
+              // derecha invitaban a tocar "Eliminar" por error.
+              <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'stretch' }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <p style={{ margin: 0, fontWeight: '600', fontSize: '15px', color: '#0f172a' }}>{inv.nombre} {inv.apellido}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b', wordBreak: 'break-all' }}>{inv.email}</p>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
                   <span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span>
                   {inv.fecha_ingreso && <span style={e.badgeGris}>{formatearHora(inv.fecha_ingreso)}</span>}
                   {inv.qr_enviado && <span style={e.badgeVerde}>QR enviado</span>}
+                </div>
+                <div style={e.accionesInvitado}>
+                  <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccion}>Editar</button>
+                  <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccion} disabled={reEnviando === inv.id}>
+                    {reEnviando === inv.id ? 'Enviando...' : 'Reenviar QR'}
+                  </button>
+                  {inv.ingresado && (
+                    <button onClick={() => deshacerIngreso(inv)} style={e.btnAccionAmbar} disabled={deshaciendo === inv.id}>
+                      {deshaciendo === inv.id ? 'Deshaciendo...' : 'Deshacer ingreso'}
+                    </button>
+                  )}
+                  <button onClick={() => eliminarInvitado(inv.id)} style={e.btnAccionRojo}>Eliminar</button>
                 </div>
               </div>
             ))
@@ -693,18 +696,17 @@ export default function Dashboard() {
                       <td style={e.td}><span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span></td>
                       <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>
                       <td style={e.td}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={e.accionesInvitado}>
+                          <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnAccion}>Editar</button>
+                          <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnAccion} disabled={reEnviando === inv.id}>
+                            {reEnviando === inv.id ? 'Enviando...' : 'Reenviar QR'}
+                          </button>
                           {inv.ingresado && (
-                            <button onClick={() => deshacerIngreso(inv)} style={e.btnDeshacerSmall}
-                              disabled={deshaciendo === inv.id} title="Deshacer ingreso">
-                              {deshaciendo === inv.id ? '...' : '↩'}
+                            <button onClick={() => deshacerIngreso(inv)} style={e.btnAccionAmbar} disabled={deshaciendo === inv.id}>
+                              {deshaciendo === inv.id ? 'Deshaciendo...' : 'Deshacer ingreso'}
                             </button>
                           )}
-                          <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnEditarSmall} title="Editar datos">✎</button>
-                          <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
-                            {reEnviando === inv.id ? '...' : '✉'}
-                          </button>
-                          <button onClick={() => eliminarInvitado(inv.id)} style={e.btnEliminarSmall}>✕</button>
+                          <button onClick={() => eliminarInvitado(inv.id)} style={e.btnAccionRojo}>Eliminar</button>
                         </div>
                       </td>
                     </tr>
@@ -951,7 +953,10 @@ const e = {
   sidebarBtns: { display: 'flex', gap: '8px' },
   sidebarBtn: { flex: 1, padding: '7px 0', backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' },
   sidebarBtnSalir: { flex: 1, padding: '7px 0', backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' },
-  main: { marginLeft: '240px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' },
+  // minWidth: 0 es imprescindible. Sin esto, un item flex no se encoge por
+  // debajo del ancho de su contenido, así que la tabla ancha empujaba el layout
+  // y desbordaba la página entera en vez de scrollear dentro de su contenedor.
+  main: { marginLeft: '240px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh' },
   topbar: { backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '0 32px', height: '62px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 },
   topbarIzq: { display: 'flex', alignItems: 'center', gap: '12px' },
   topbarTitulo: { fontSize: '17px', fontWeight: '600', color: '#0f172a', margin: 0 },
@@ -973,7 +978,11 @@ const e = {
   cardMetaMobile: { display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' },
   cardAccionesMobile: { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0, marginLeft: '12px' },
   statsRowMobile: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' },
-  importarBoxMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0', gap: '12px' },
+  // En el celular el título y los botones se apilan: con dos botones al lado
+  // del texto, la fila no entraba y desbordaba la pantalla.
+  importarBoxMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', border: '1px solid #e2e8f0', gap: '12px' },
+  importarBotones: { display: 'flex', gap: '8px', flexShrink: 0 },
+  importarBotonesMobile: { display: 'flex', gap: '8px' },
   formContenedorMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0' },
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #bbf7d0' },
   alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' },
@@ -996,7 +1005,9 @@ const e = {
   importarBox: { backgroundColor: 'white', borderRadius: '12px', padding: '20px 24px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gap: '16px' },
   importarTitulo: { fontSize: '14px', fontWeight: '600', color: '#0f172a', margin: '0 0 4px' },
   importarDesc: { fontSize: '13px', color: '#64748b', margin: 0 },
-  tableWrapper: { borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
+  // overflowX auto: con los botones de texto la tabla puede no entrar en
+  // pantallas angostas, y preferimos que scrollee antes que se rompa.
+  tableWrapper: { borderRadius: '12px', overflowX: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
   tabla: { width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' },
   th: { backgroundColor: '#f8fafc', color: '#475569', padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #e2e8f0' },
   td: { padding: '12px 16px', fontSize: '13px', borderBottom: '1px solid #f1f5f9', color: '#334155' },
@@ -1017,10 +1028,12 @@ const e = {
   btnSecundario: { padding: '10px 20px', backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' },
   btnDanger: { padding: '8px 14px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   btnSuccess: { padding: '8px 14px', backgroundColor: 'white', color: '#16a34a', border: '1px solid #86efac', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
-  btnEliminarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  btnReenviarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  btnDeshacerSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  btnEditarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  // Acciones por invitado, con texto en vez de símbolos: en el celular no hay
+  // tooltip que los explique, y "✕" pegado a "✉" invitaba a borrar por error.
+  accionesInvitado: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
+  btnAccion: { padding: '6px 12px', backgroundColor: 'white', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
+  btnAccionAmbar: { padding: '6px 12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
+  btnAccionRojo: { padding: '6px 12px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
   badgeVerde: { backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGris: { backgroundColor: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
