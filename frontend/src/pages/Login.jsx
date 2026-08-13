@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import api from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
 import CampoPassword from '../components/CampoPassword'
@@ -77,6 +77,9 @@ export default function Login() {
               {cargando ? 'Ingresando...' : 'Ingresar →'}
             </button>
           </form>
+          <div style={m.olvide}>
+            <Link to="/recuperar" style={m.olvideLink}>¿Olvidaste tu contraseña?</Link>
+          </div>
           <p style={m.footer}>Mendoza, Argentina</p>
         </div>
       </div>
@@ -113,6 +116,9 @@ export default function Login() {
               {cargando ? 'Ingresando...' : 'Ingresar →'}
             </button>
           </form>
+          <div style={s.olvide}>
+            <Link to="/recuperar" style={s.olvideLink}>¿Olvidaste tu contraseña?</Link>
+          </div>
           <p style={s.footer}>Salón Alto Belgrano — Mendoza, Argentina</p>
         </div>
       </div>
@@ -134,6 +140,8 @@ const m = {
   label: { display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#374151' },
   input: { width: '100%', padding: '14px', border: '1px solid #d1d5db', borderRadius: '10px', fontSize: '16px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white' },
   btn: { width: '100%', padding: '15px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', marginTop: '8px' },
+  olvide: { textAlign: 'center', marginTop: '16px' },
+  olvideLink: { fontSize: '14px', color: '#1d4ed8', textDecoration: 'none' },
   footer: { fontSize: '12px', color: '#94a3b8', textAlign: 'center', marginTop: '24px' },
 }
 
@@ -155,5 +163,7 @@ const s = {
   label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' },
   input: { width: '100%', padding: '11px 14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white', outline: 'none' },
   btn: { width: '100%', padding: '13px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', marginTop: '4px' },
+  olvide: { textAlign: 'center', marginTop: '16px' },
+  olvideLink: { fontSize: '13px', color: '#1d4ed8', textDecoration: 'none' },
   footer: { fontSize: '12px', color: '#94a3b8', textAlign: 'center', marginTop: '32px' },
 }

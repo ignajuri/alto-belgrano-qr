@@ -8,7 +8,8 @@ El backend depende de columnas que no existen todavía. Si desplegás el código
 antes de correr la migración, el login va a fallar.
 
 1. **Supabase** → SQL Editor → ejecutar las migraciones de `backend/migrations/`
-   en orden numérico (`001_seguridad.sql`, después `002_retencion_datos.sql`).
+   en orden numérico (`001_seguridad.sql`, `002_retencion_datos.sql`,
+   `003_recuperacion_password.sql`).
 2. **Render** → cargar las variables de entorno nuevas (ver abajo) → redeploy.
 3. **Vercel** → verificar `VITE_API_URL` → redeploy.
 
@@ -24,6 +25,7 @@ revisar sí o sí:
 | `JWT_SECRET` | **Mínimo 32 caracteres.** El servidor no arranca si es más corto. Generar con `openssl rand -base64 48`. |
 | `CORS_ORIGENES` | `https://alto-belgrano-qr.vercel.app`. Separar por comas si hay más de uno. |
 | `EMAIL_REMITENTE` | Cambiar por un dominio propio verificado en Resend. |
+| `APP_URL` | `https://qr.altobelgrano.com.ar`. Base del enlace de recuperación que va en el email. Sin barra al final. |
 | `NODE_ENV` | `production` |
 
 Si cambiás el `JWT_SECRET`, todas las sesiones abiertas se invalidan. Es lo
@@ -45,9 +47,9 @@ borrar. El frontend no habla con Supabase directamente.
 
 ### Row Level Security
 
-Las cuatro tablas (`usuarios`, `eventos`, `invitados`, `auditoria`) tienen RLS
-activo y **solo** políticas para `service_role`. El rol `anon` no puede leer ni
-escribir nada.
+Las cinco tablas (`usuarios`, `eventos`, `invitados`, `auditoria`,
+`tokens_recuperacion`) tienen RLS activo y **solo** políticas para
+`service_role`. El rol `anon` no puede leer ni escribir nada.
 
 **No agregar políticas para `anon`.** La tabla `invitados` contiene los
 `qr_token`, que son la credencial de acceso al evento: exponerlos permitiría
@@ -141,6 +143,45 @@ usar la consulta de la sección 6 de `002_retencion_datos.sql`.
 
 En el dashboard, los eventos ya purgados muestran los totales y un aviso en vez
 de la lista nominal, y no permiten importar.
+
+## Recuperación de contraseña
+
+Enlace **"¿Olvidaste tu contraseña?"** en el login, disponible para admins y
+guardias. El flujo tiene dos etapas: pedir el enlace (`/recuperar`) y elegir la
+contraseña nueva (`/restablecer?token=…`).
+
+Decisiones que sostienen la seguridad de esto y que **no conviene cambiar**:
+
+- **En la base se guarda el SHA-256 del token, nunca el token.** Quien logre
+  leer la tabla `tokens_recuperacion` no puede usar los enlaces pendientes.
+- **La respuesta al pedir un enlace es siempre idéntica**, exista o no la
+  cuenta. Si dijera "no encontramos ese email", la pantalla se convertiría en
+  un detector de qué cuentas existen.
+- **El email se manda sin esperar a Resend.** Si se esperara, una cuenta
+  existente tardaría casi un segundo más que una inexistente, y esa diferencia
+  de tiempo permitiría deducir qué direcciones están registradas.
+- **El token se reclama de forma atómica antes de tocar la contraseña**
+  (`update … where usado_en is null and expira_en > now()`), así un doble envío
+  del formulario no puede aplicarse dos veces.
+- **Un solo uso, vence en 60 minutos** (`RECUPERACION_MINUTOS`), y pedir uno
+  nuevo invalida el anterior.
+- **Rate limit de 5 solicitudes por hora y por IP**, para que nadie pueda
+  bombardear la casilla de un usuario.
+
+Restablecer la contraseña además:
+
+- Actualiza `password_changed_at`, con lo que **cierra todas las sesiones**
+  abiertas de esa cuenta en cualquier dispositivo.
+- **Levanta el bloqueo por intentos fallidos.** Demostrar control del correo es
+  una prueba de identidad más fuerte que saber la contraseña, y si no se
+  levantara, la persona restablecería su clave y aun así no podría entrar.
+- Dispara un **aviso por email de que la contraseña cambió**. Es la alarma del
+  sistema: si alguien lograra restablecer una cuenta ajena, el dueño se entera
+  en el momento.
+
+> ⚠️ Esto depende de que los correos lleguen. Mientras Outlook siga mandando a
+> spam por la reputación del dominio, un guardia con Hotmail puede no ver el
+> enlace. Tanto la pantalla como el email lo advierten.
 
 ## Auditoría
 

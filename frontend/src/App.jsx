@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Escaner from './pages/Escaner'
+import Recuperar from './pages/Recuperar'
 
 const leerUsuario = () => {
   try {
@@ -41,6 +42,11 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        {/* Públicas: las usa alguien que justamente no puede autenticarse.
+            Ambas rutas apuntan al mismo componente, que decide qué formulario
+            mostrar según venga o no un token en la URL. */}
+        <Route path="/recuperar" element={<Recuperar />} />
+        <Route path="/restablecer" element={<Recuperar />} />
         <Route path="/dashboard" element={
           <RutaPrivada rol="admin">
             <Dashboard />

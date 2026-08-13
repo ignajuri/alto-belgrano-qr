@@ -2,8 +2,14 @@ const supabase = require('../config/supabase')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const config = require('../config/env')
-const { registrar, ACCIONES } = require('../utils/auditoria')
-const { esEmailValido, normalizarEmail } = require('../utils/validacion')
+const { registrar, obtenerIp, ACCIONES } = require('../utils/auditoria')
+const { esEmailValido, normalizarEmail, validarPassword } = require('../utils/validacion')
+const { generarToken, hashearToken } = require('../utils/tokens')
+const { enviarEnlaceRecuperacion, enviarAvisoPasswordCambiada } = require('../services/emailService')
+
+// Mismo costo que usuariosController: cambiarlo en un solo lado dejaría hashes
+// con fortalezas distintas según por dónde se haya fijado la contraseña.
+const BCRYPT_ROUNDS = 12
 
 // Hash descartable con el que comparamos cuando el usuario no existe. Sin esto,
 // un email inexistente responde en ~1ms y uno existente en ~80ms (el costo de
@@ -108,6 +114,161 @@ const registrarFallo = async (req, usuario) => {
   })
 }
 
+// ── Recuperación de contraseña ──────────────────────────────────────────────
+
+// La respuesta es SIEMPRE la misma, exista o no la cuenta. Si dijera "no
+// encontramos ese email", esta pantalla se convertiría en una herramienta para
+// averiguar qué cuentas existen en el sistema.
+const RESPUESTA_RECUPERACION = {
+  mensaje: 'Si esa dirección corresponde a una cuenta, te enviamos un enlace para restablecer tu contraseña. Revisá tu correo, incluida la carpeta de no deseados.'
+}
+
+const solicitarRecuperacion = async (req, res) => {
+  const email = normalizarEmail(req.body?.email)
+
+  if (!esEmailValido(email)) {
+    return res.json(RESPUESTA_RECUPERACION)
+  }
+
+  try {
+    const { data: usuario } = await supabase
+      .from('usuarios')
+      .select('id, nombre, email, activo')
+      .eq('email', email)
+      .maybeSingle()
+
+    // Cuenta inexistente o desactivada: no se manda nada, misma respuesta.
+    if (!usuario || !usuario.activo) {
+      await registrar(req, ACCIONES.RECUPERACION_RECHAZADA, {
+        detalle: { email, motivo: usuario ? 'cuenta_inactiva' : 'sin_cuenta' }
+      })
+      return res.json(RESPUESTA_RECUPERACION)
+    }
+
+    // Pedir un enlace nuevo invalida los anteriores: solo el último sirve.
+    await supabase
+      .from('tokens_recuperacion')
+      .update({ usado_en: new Date().toISOString() })
+      .eq('usuario_id', usuario.id)
+      .is('usado_en', null)
+
+    const token = generarToken()
+    const expira = new Date(Date.now() + config.recuperacionMinutos * 60 * 1000)
+
+    const { error } = await supabase.from('tokens_recuperacion').insert([{
+      usuario_id: usuario.id,
+      token_hash: hashearToken(token),
+      expira_en: expira.toISOString(),
+      ip: obtenerIp(req)
+    }])
+
+    if (error) throw error
+
+    await registrar(req, ACCIONES.RECUPERACION_SOLICITADA, {
+      entidad: 'usuarios', entidadId: usuario.id, detalle: { email }
+    })
+
+    // Sin await a propósito: si esperáramos a Resend, una cuenta existente
+    // tardaría casi un segundo más que una inexistente, y esa diferencia
+    // permitiría deducir qué emails están registrados.
+    const enlace = `${config.appUrl}/restablecer?token=${encodeURIComponent(token)}`
+    enviarEnlaceRecuperacion(usuario, enlace, config.recuperacionMinutos)
+      .catch(err => console.error(`[email] falló el enlace de recuperación: ${err.message}`))
+
+    res.json(RESPUESTA_RECUPERACION)
+
+  } catch (error) {
+    console.error('Error al solicitar recuperación:', error)
+    // Ni siquiera acá revelamos algo distinto.
+    res.json(RESPUESTA_RECUPERACION)
+  }
+}
+
+const restablecerPassword = async (req, res) => {
+  const token = req.body?.token
+  const password = req.body?.password
+
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'Enlace inválido' })
+  }
+
+  const errorPassword = validarPassword(password)
+  if (errorPassword) {
+    return res.status(400).json({ error: errorPassword })
+  }
+
+  try {
+    const ahora = new Date().toISOString()
+
+    // El token se reclama de forma atómica ANTES de tocar la contraseña:
+    // condicionado a no usado y no vencido. Si alguien envía el formulario dos
+    // veces, solo la primera afecta una fila.
+    const { data: reclamados, error: errorReclamo } = await supabase
+      .from('tokens_recuperacion')
+      .update({ usado_en: ahora })
+      .eq('token_hash', hashearToken(token))
+      .is('usado_en', null)
+      .gt('expira_en', ahora)
+      .select('id, usuario_id')
+
+    if (errorReclamo) throw errorReclamo
+
+    if (!reclamados || reclamados.length === 0) {
+      await registrar(req, ACCIONES.RECUPERACION_RECHAZADA, {
+        detalle: { motivo: 'token_invalido_vencido_o_usado' }
+      })
+      return res.status(400).json({
+        error: 'El enlace no es válido, ya fue utilizado o venció. Pedí uno nuevo.'
+      })
+    }
+
+    const { data: usuario } = await supabase
+      .from('usuarios')
+      .select('id, nombre, email, activo')
+      .eq('id', reclamados[0].usuario_id)
+      .maybeSingle()
+
+    if (!usuario || !usuario.activo) {
+      return res.status(400).json({ error: 'La cuenta no está disponible' })
+    }
+
+    const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+
+    // password_changed_at invalida todos los JWT previos (ver middleware de
+    // auth): restablecer cierra las sesiones abiertas en todos los dispositivos.
+    //
+    // El bloqueo por intentos fallidos también se levanta: demostrar control de
+    // la casilla de correo es una prueba de identidad más fuerte que saber la
+    // contraseña, y si no se levantara la persona restablecería su clave y aun
+    // así no podría entrar.
+    const { error: errorUpdate } = await supabase
+      .from('usuarios')
+      .update({
+        password_hash,
+        password_changed_at: ahora,
+        intentos_fallidos: 0,
+        bloqueado_hasta: null
+      })
+      .eq('id', usuario.id)
+
+    if (errorUpdate) throw errorUpdate
+
+    req.usuario = { id: usuario.id, email: usuario.email }
+    await registrar(req, ACCIONES.RECUPERACION_COMPLETADA, {
+      entidad: 'usuarios', entidadId: usuario.id
+    })
+
+    enviarAvisoPasswordCambiada(usuario)
+      .catch(err => console.error(`[email] falló el aviso de cambio: ${err.message}`))
+
+    res.json({ mensaje: 'Tu contraseña se actualizó. Ya podés iniciar sesión.' })
+
+  } catch (error) {
+    console.error('Error al restablecer contraseña:', error)
+    res.status(500).json({ error: 'Error al restablecer la contraseña' })
+  }
+}
+
 // Cierre de sesión explícito. Como los JWT son stateless no se pueden invalidar
 // de a uno; el frontend descarta el token. Queda registrado para auditoría.
 const logout = async (req, res) => {
@@ -115,4 +276,4 @@ const logout = async (req, res) => {
   res.json({ mensaje: 'Sesión cerrada' })
 }
 
-module.exports = { login, logout }
+module.exports = { login, logout, solicitarRecuperacion, restablecerPassword }

@@ -15,6 +15,26 @@ const limiteLogin = rateLimit({
   handler: respuesta('Demasiados intentos de inicio de sesión. Esperá 15 minutos.')
 })
 
+// Pedir un enlace de recuperación manda un email a un tercero: sin un límite
+// duro, cualquiera puede bombardear la casilla de un usuario.
+const limiteRecuperacion = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: respuesta('Demasiadas solicitudes de recuperación. Esperá una hora.')
+})
+
+// Restablecer no manda emails a terceros, pero conviene frenar la fuerza bruta
+// sobre tokens (aunque son de 256 bits y adivinarlos es inviable).
+const limiteRestablecer = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: respuesta('Demasiados intentos. Esperá una hora.')
+})
+
 // Techo general para toda la API: frena scraping y abuso automatizado.
 const limiteGeneral = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -55,6 +75,8 @@ const limiteValidacion = rateLimit({
 
 module.exports = {
   limiteLogin,
+  limiteRecuperacion,
+  limiteRestablecer,
   limiteGeneral,
   limiteImportacion,
   limiteEmail,

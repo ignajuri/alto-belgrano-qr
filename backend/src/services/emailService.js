@@ -85,6 +85,109 @@ const enviarInvitacion = async (invitado, evento) => {
   await supabase.from('invitados').update({ qr_enviado: true }).eq('id', invitado.id)
 }
 
+// ── Recuperación de contraseña ──────────────────────────────────────────────
+
+const enviarEnlaceRecuperacion = async (usuario, enlace, minutos) => {
+  const nombre = escaparHtml(usuario.nombre)
+  const url = escaparHtml(enlace)
+
+  const { error } = await resend.emails.send({
+    from: config.emailRemitente,
+    to: usuario.email,
+    subject: 'Restablecer tu contraseña — Alto Belgrano',
+    ...(config.emailRespuesta ? { replyTo: config.emailRespuesta } : {}),
+    html: `
+  <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; color: #1f2937;">
+    <h2 style="color: #1a3a6b;">Hola ${nombre}</h2>
+    <p>Pediste restablecer la contraseña de tu cuenta del sistema de acceso del
+       Salón Alto Belgrano.</p>
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${url}" style="display: inline-block; background-color: #1d4ed8; color: #ffffff;
+         padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+        Restablecer mi contraseña
+      </a>
+    </div>
+    <p style="color: #4b5563; font-size: 14px;">
+      El enlace vence en ${minutos} minutos y se puede usar una sola vez.
+    </p>
+    <p style="color: #4b5563; font-size: 14px;">
+      <strong>Si no pediste esto, ignorá el correo.</strong> Tu contraseña no
+      cambia hasta que uses el enlace.
+    </p>
+    <p style="color: #6b7280; font-size: 13px;">
+      Si el botón no funciona, copiá y pegá esta dirección en el navegador:<br/>
+      <span style="word-break: break-all;">${url}</span>
+    </p>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
+    <p style="color: #6b7280; font-size: 13px; margin: 0;">
+      Salón Alto Belgrano — Mendoza, Argentina
+    </p>
+  </div>`,
+    text: `Hola ${usuario.nombre}
+
+Pediste restablecer la contraseña de tu cuenta del sistema de acceso del
+Salón Alto Belgrano.
+
+Entrá a esta dirección para elegir una nueva:
+
+${enlace}
+
+El enlace vence en ${minutos} minutos y se puede usar una sola vez.
+
+Si no pediste esto, ignorá el correo: tu contraseña no cambia hasta que
+uses el enlace.
+
+--
+Salón Alto Belgrano — Mendoza, Argentina`
+  })
+
+  if (error) throw new Error(error.message || 'Resend rechazó el envío')
+}
+
+// Aviso posterior al cambio. Es la alarma del sistema: si alguien lograra
+// restablecer la contraseña de una cuenta ajena, el dueño se entera en el
+// momento en vez de descubrirlo cuando no puede entrar.
+const enviarAvisoPasswordCambiada = async (usuario) => {
+  const nombre = escaparHtml(usuario.nombre)
+  const cuando = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })
+
+  const { error } = await resend.emails.send({
+    from: config.emailRemitente,
+    to: usuario.email,
+    subject: 'Tu contraseña fue cambiada — Alto Belgrano',
+    ...(config.emailRespuesta ? { replyTo: config.emailRespuesta } : {}),
+    html: `
+  <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; color: #1f2937;">
+    <h2 style="color: #1a3a6b;">Hola ${nombre}</h2>
+    <p>La contraseña de tu cuenta del Salón Alto Belgrano se cambió el
+       <strong>${escaparHtml(cuando)}</strong>.</p>
+    <p>Todas las sesiones que tenías abiertas se cerraron.</p>
+    <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 24px 0;">
+      <p style="margin: 0; color: #b91c1c; font-size: 14px;">
+        <strong>Si no fuiste vos</strong>, avisá de inmediato a la administración
+        del salón para que desactiven la cuenta.
+      </p>
+    </div>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
+    <p style="color: #6b7280; font-size: 13px; margin: 0;">
+      Salón Alto Belgrano — Mendoza, Argentina
+    </p>
+  </div>`,
+    text: `Hola ${usuario.nombre}
+
+La contraseña de tu cuenta del Salón Alto Belgrano se cambió el ${cuando}.
+Todas las sesiones que tenías abiertas se cerraron.
+
+Si no fuiste vos, avisá de inmediato a la administración del salón para que
+desactiven la cuenta.
+
+--
+Salón Alto Belgrano — Mendoza, Argentina`
+  })
+
+  if (error) throw new Error(error.message || 'Resend rechazó el envío')
+}
+
 const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 // Envío en segundo plano: la request HTTP responde apenas se insertan los
@@ -111,4 +214,9 @@ const enviarInvitacionesEnLote = async (invitados, evento) => {
   console.log(`[email] lote del evento ${evento.id}: ${enviados} enviados, ${fallidos} fallidos`)
 }
 
-module.exports = { enviarInvitacion, enviarInvitacionesEnLote }
+module.exports = {
+  enviarInvitacion,
+  enviarInvitacionesEnLote,
+  enviarEnlaceRecuperacion,
+  enviarAvisoPasswordCambiada
+}

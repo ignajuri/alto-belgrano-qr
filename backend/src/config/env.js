@@ -49,6 +49,11 @@ module.exports = {
 
   // El dominio propio es el definitivo; el de Vercel se mantiene mientras el
   // personal siga usando la dirección vieja.
+  // Base para armar el enlace de recuperación que va en el email.
+  appUrl: (process.env.APP_URL || 'https://qr.altobelgrano.com.ar').replace(/\/$/, ''),
+  // Cuánto vive un enlace de restablecimiento.
+  recuperacionMinutos: parseInt(process.env.RECUPERACION_MINUTOS || '60', 10),
+
   corsOrigenes: listaDeOrigenes(
     process.env.CORS_ORIGENES ||
       'https://qr.altobelgrano.com.ar,https://alto-belgrano-qr.vercel.app'
