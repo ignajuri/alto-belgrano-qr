@@ -26,6 +26,9 @@ export default function Dashboard() {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [reEnviando, setReEnviando] = useState(null)
   const [deshaciendo, setDeshaciendo] = useState(null)
+  // null = modal cerrado | 'nuevo' = alta | objeto invitado = edición
+  const [invitadoEditando, setInvitadoEditando] = useState(null)
+  const [formInvitado, setFormInvitado] = useState({ nombre: '', apellido: '', dni: '', email: '' })
   const navigate = useNavigate()
   const isMobile = useIsMobile()
 
@@ -287,6 +290,37 @@ export default function Dashboard() {
     }
   }
 
+  const abrirNuevoInvitado = () => {
+    setFormInvitado({ nombre: '', apellido: '', dni: '', email: '' })
+    setInvitadoEditando('nuevo')
+  }
+
+  const abrirEdicionInvitado = (inv) => {
+    setFormInvitado({ nombre: inv.nombre, apellido: inv.apellido, dni: inv.dni, email: inv.email })
+    setInvitadoEditando(inv)
+  }
+
+  const guardarInvitado = async (ev) => {
+    ev.preventDefault()
+    const esNuevo = invitadoEditando === 'nuevo'
+    setCargando(true)
+    try {
+      const base = `/eventos/${eventoSeleccionado.id}/invitados`
+      const res = esNuevo
+        ? await api.post(base, formInvitado)
+        : await api.put(`${base}/${invitadoEditando.id}`, formInvitado)
+
+      setInvitados(prev => esNuevo
+        ? [...prev, res.data.invitado].sort((a, b) => a.apellido.localeCompare(b.apellido, 'es'))
+        : prev.map(i => (i.id === res.data.invitado.id ? res.data.invitado : i)))
+
+      setInvitadoEditando(null)
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
+    } catch (err) {
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo guardar el invitado'))
+    } finally { setCargando(false) }
+  }
+
   // Para el caso en que un QR se escanea por error y el invitado queda sin
   // poder entrar. Devuelve el QR a estado válido.
   const deshacerIngreso = async (inv) => {
@@ -398,6 +432,51 @@ export default function Dashboard() {
                 <button type="button" onClick={() => setUsuarioEditando(null)} style={e.btnSecundario}>Cancelar</button>
                 <button type="submit" style={e.btnPrimario} disabled={cargando}>
                   {cargando ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal alta / edición de invitado */}
+      {invitadoEditando && (
+        <div style={e.modalOverlay}>
+          <div style={e.modal}>
+            <div style={e.modalHeader}>
+              <h3 style={e.modalTitulo}>
+                {invitadoEditando === 'nuevo' ? 'Agregar invitado' : 'Editar invitado'}
+              </h3>
+              <button type="button" onClick={() => setInvitadoEditando(null)} style={e.modalClose}>✕</button>
+            </div>
+            <form onSubmit={guardarInvitado}>
+              <div style={e.modalBody}>
+                {[
+                  { label: 'Nombre', key: 'nombre', type: 'text', placeholder: 'Ej: Sofía' },
+                  { label: 'Apellido', key: 'apellido', type: 'text', placeholder: 'Ej: Gutiérrez' },
+                  { label: 'DNI', key: 'dni', type: 'text', placeholder: 'Ej: 38452019' },
+                  { label: 'Email', key: 'email', type: 'email', placeholder: 'sofia@ejemplo.com' },
+                ].map(({ label, key, type, placeholder }) => (
+                  <div key={key} style={e.campo}>
+                    <label style={e.label}>{label}</label>
+                    <input type={type} value={formInvitado[key]} placeholder={placeholder}
+                      onChange={ev => setFormInvitado({ ...formInvitado, [key]: ev.target.value })}
+                      style={e.input} required />
+                    {key === 'dni' && <p style={e.ayuda}>Sin puntos ni espacios.</p>}
+                  </div>
+                ))}
+                <p style={e.ayuda}>
+                  {invitadoEditando === 'nuevo'
+                    ? 'Al guardar se le envía el QR por email automáticamente.'
+                    : 'Si cambiás el email, el QR se reenvía a la dirección nueva. El código sigue siendo el mismo, así que el que ya tenga la persona sigue sirviendo.'}
+                </p>
+              </div>
+              <div style={e.modalBotones}>
+                <button type="button" onClick={() => setInvitadoEditando(null)} style={e.btnSecundario}>Cancelar</button>
+                <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                  {cargando
+                    ? 'Guardando...'
+                    : invitadoEditando === 'nuevo' ? 'Agregar y enviar QR' : 'Guardar cambios'}
                 </button>
               </div>
             </form>
@@ -533,7 +612,10 @@ export default function Dashboard() {
                 <p style={e.importarTitulo}>Importar lista de invitados</p>
                 {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
               </div>
-              <div>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button onClick={abrirNuevoInvitado} style={e.btnSecundario} disabled={cargando}>
+                  ＋ Agregar uno
+                </button>
                 <input type="file" accept=".xlsx" id="file-input"
                   onChange={ev => importarExcel(ev, eventoSeleccionado.id)}
                   style={{ display: 'none' }} disabled={cargando} />
@@ -559,7 +641,7 @@ export default function Dashboard() {
             <div style={e.emptyState}>
               <div style={e.emptyIcon}>👥</div>
               <p style={e.emptyTitulo}>No hay invitados cargados</p>
-              <p style={e.emptyDesc}>Importá un archivo Excel para comenzar.</p>
+              <p style={e.emptyDesc}>Importá un archivo Excel o agregalos de a uno.</p>
             </div>
           ) : isMobile ? (
             invitados.map(inv => (
@@ -576,6 +658,7 @@ export default function Dashboard() {
                         {deshaciendo === inv.id ? '...' : '↩'}
                       </button>
                     )}
+                    <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnEditarSmall} title="Editar datos">✎</button>
                     <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
                       {reEnviando === inv.id ? '...' : '✉'}
                     </button>
@@ -617,6 +700,7 @@ export default function Dashboard() {
                               {deshaciendo === inv.id ? '...' : '↩'}
                             </button>
                           )}
+                          <button onClick={() => abrirEdicionInvitado(inv)} style={e.btnEditarSmall} title="Editar datos">✎</button>
                           <button onClick={() => reenviarQR(inv.id, inv.nombre)} style={e.btnReenviarSmall} disabled={reEnviando === inv.id} title="Reenviar QR">
                             {reEnviando === inv.id ? '...' : '✉'}
                           </button>
@@ -936,6 +1020,7 @@ const e = {
   btnEliminarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   btnReenviarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   btnDeshacerSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  btnEditarSmall: { padding: '4px 8px', backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   badgeVerde: { backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeGris: { backgroundColor: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },
   badgeAdmin: { backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '500' },

@@ -37,6 +37,8 @@ const ACCIONES = {
   EVENTO_ACTUALIZADO: 'evento_actualizado',
   EVENTO_ELIMINADO: 'evento_eliminado',
   INVITADOS_IMPORTADOS: 'invitados_importados',
+  INVITADO_CREADO: 'invitado_creado',
+  INVITADO_EDITADO: 'invitado_editado',
   INVITADO_ELIMINADO: 'invitado_eliminado',
   QR_REENVIADO: 'qr_reenviado',
   QR_VALIDADO: 'qr_validado',

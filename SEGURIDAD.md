@@ -148,6 +148,29 @@ Tabla `auditoria`. Registra logins (exitosos y fallidos), bloqueos, altas y baja
 de usuarios y eventos, importaciones, reenvíos de QR, cada validación y cada
 ingreso deshecho.
 
+### Alta y edición manual de invitados
+
+Además de la importación por Excel, un administrador puede agregar invitados de
+a uno y corregir los datos de uno existente. Ambas operaciones aplican las
+**mismas validaciones que el importador** (DNI numérico de 6 a 10 dígitos con
+los puntos normalizados, email con formato válido en minúsculas), para que no
+haya dos criterios distintos según por dónde entre el dato.
+
+Dos invariantes que conviene no romper:
+
+- **Editar nunca regenera el `qr_token`.** El código que el invitado ya tiene en
+  su casilla tiene que seguir sirviendo. El token identifica la fila, no los
+  datos.
+- **El `qr_token` no sale nunca en las respuestas de la API.** Ni al crear, ni al
+  editar, ni al listar. Es la credencial de acceso.
+
+Si al editar cambia el email, el QR se reenvía solo a la dirección nueva: la
+casilla corregida nunca había recibido nada. Queda en auditoría como
+`qr_reenviado` con motivo `cambio_de_email`.
+
+Un evento ya purgado rechaza altas nuevas: sus datos personales se borraron por
+política de retención y volver a cargarlos contradice esa decisión.
+
 ### Deshacer un ingreso
 
 Si un QR se escanea por error, el invitado queda sin poder entrar y su código no
