@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api, { cerrarSesionLocal } from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
+import CampoPassword from '../components/CampoPassword'
 
 const leerUsuarioLocal = () => {
   try {
@@ -419,9 +420,9 @@ export default function Dashboard() {
                 </div>
                 <div style={e.campo}>
                   <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-                  <input type="password" value={formEdicion.password} autoComplete="new-password"
+                  <CampoPassword valor={formEdicion.password} autoComplete="new-password"
                     onChange={ev => setFormEdicion({ ...formEdicion, password: ev.target.value })}
-                    style={e.input} />
+                    estiloInput={e.input} />
                   <p style={e.ayuda}>
                     Mínimo 10 caracteres, con letra y número. Al cambiarla se cierran
                     las sesiones abiertas de ese usuario.
@@ -730,12 +731,17 @@ export default function Dashboard() {
               ].map(({ label, key, type, placeholder }) => (
                 <div key={key} style={e.campo}>
                   <label style={e.label}>{label}</label>
-                  <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
-                    onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
-                    style={e.input} required
-                    autoComplete={key === 'password' ? 'new-password' : 'off'} />
-                  {key === 'password' && (
-                    <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
+                  {key === 'password' ? (
+                    <>
+                      <CampoPassword valor={nuevoUsuario.password} placeholder={placeholder}
+                        onChange={ev => setNuevoUsuario({ ...nuevoUsuario, password: ev.target.value })}
+                        estiloInput={e.input} autoComplete="new-password" required />
+                      <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
+                    </>
+                  ) : (
+                    <input type={type} value={nuevoUsuario[key]} placeholder={placeholder}
+                      onChange={ev => setNuevoUsuario({ ...nuevoUsuario, [key]: ev.target.value })}
+                      style={e.input} required autoComplete="off" />
                   )}
                 </div>
               ))}
@@ -799,24 +805,24 @@ export default function Dashboard() {
             </div>
             <div style={e.campo}>
               <label style={e.label}>Nueva contraseña <span style={e.opcional}>(dejar vacío para no cambiar)</span></label>
-              <input type="password" value={miPerfil.password} autoComplete="new-password"
+              <CampoPassword valor={miPerfil.password} autoComplete="new-password"
                 onChange={ev => setMiPerfil({ ...miPerfil, password: ev.target.value })}
-                style={e.input} />
+                estiloInput={e.input} />
               <p style={e.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
             </div>
             {miPerfil.password && (
               <>
                 <div style={e.campo}>
                   <label style={e.label}>Confirmar nueva contraseña</label>
-                  <input type="password" value={miPerfil.confirmarPassword} autoComplete="new-password"
+                  <CampoPassword valor={miPerfil.confirmarPassword} autoComplete="new-password"
                     onChange={ev => setMiPerfil({ ...miPerfil, confirmarPassword: ev.target.value })}
-                    style={e.input} />
+                    estiloInput={e.input} />
                 </div>
                 <div style={e.campo}>
                   <label style={e.label}>Contraseña actual</label>
-                  <input type="password" value={miPerfil.passwordActual} autoComplete="current-password"
+                  <CampoPassword valor={miPerfil.passwordActual} autoComplete="current-password"
                     onChange={ev => setMiPerfil({ ...miPerfil, passwordActual: ev.target.value })}
-                    style={e.input} required />
+                    estiloInput={e.input} required />
                   <p style={e.ayuda}>
                     Al cambiar la contraseña se cierran todas las sesiones abiertas.
                   </p>

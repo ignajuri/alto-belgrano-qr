@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import api, { cerrarSesionLocal } from '../services/api'
+import CampoPassword from '../components/CampoPassword'
 
 const leerUsuarioLocal = () => {
   try {
@@ -310,24 +311,24 @@ export default function Escaner() {
                 <label style={es.label}>
                   Nueva contraseña <span style={es.opcional}>(dejar vacío para no cambiar)</span>
                 </label>
-                <input type="password" value={perfil.password} autoComplete="new-password"
+                <CampoPassword valor={perfil.password} autoComplete="new-password"
                   onChange={ev => setPerfil({ ...perfil, password: ev.target.value })}
-                  style={es.input} />
+                  estiloInput={es.input} />
                 <p style={es.ayuda}>Mínimo 10 caracteres, con al menos una letra y un número.</p>
               </div>
               {perfil.password && (
                 <>
                   <div style={es.campo}>
                     <label style={es.label}>Confirmar nueva contraseña</label>
-                    <input type="password" value={perfil.confirmarPassword} autoComplete="new-password"
+                    <CampoPassword valor={perfil.confirmarPassword} autoComplete="new-password"
                       onChange={ev => setPerfil({ ...perfil, confirmarPassword: ev.target.value })}
-                      style={es.input} />
+                      estiloInput={es.input} />
                   </div>
                   <div style={es.campo}>
                     <label style={es.label}>Contraseña actual</label>
-                    <input type="password" value={perfil.passwordActual} autoComplete="current-password"
+                    <CampoPassword valor={perfil.passwordActual} autoComplete="current-password"
                       onChange={ev => setPerfil({ ...perfil, passwordActual: ev.target.value })}
-                      style={es.input} required />
+                      estiloInput={es.input} required />
                     <p style={es.ayuda}>Al cambiarla se cierran todas tus sesiones abiertas.</p>
                   </div>
                 </>
