@@ -47,8 +47,11 @@ module.exports = {
   // comernos un 429 en medio de una importación de 200 invitados.
   emailIntervaloMs: parseInt(process.env.EMAIL_INTERVALO_MS || '600', 10),
 
+  // El dominio propio es el definitivo; el de Vercel se mantiene mientras el
+  // personal siga usando la dirección vieja.
   corsOrigenes: listaDeOrigenes(
-    process.env.CORS_ORIGENES || 'https://alto-belgrano-qr.vercel.app'
+    process.env.CORS_ORIGENES ||
+      'https://qr.altobelgrano.com.ar,https://alto-belgrano-qr.vercel.app'
   ),
 
   // Ventana de validez del QR, relativa al día del evento.
