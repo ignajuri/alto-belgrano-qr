@@ -3,6 +3,35 @@ import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
 
+// SVG inline: la CSP no permite cargar iconos de un CDN.
+const OjoIcono = ({ tachado }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+    {tachado && <line x1="3" y1="3" x2="21" y2="21" />}
+  </svg>
+)
+
+// Definido fuera de Login: si viviera dentro del render, React lo remontaría en
+// cada tecla y el campo perdería el foco.
+const CampoPassword = ({ valor, onChange, estilos }) => {
+  const [visible, setVisible] = useState(false)
+  const etiqueta = visible ? 'Ocultar contraseña' : 'Mostrar contraseña'
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input type={visible ? 'text' : 'password'} value={valor} onChange={onChange}
+        style={{ ...estilos.input, ...estilos.inputConOjo }} placeholder="••••••••"
+        autoComplete="current-password" required />
+      <button type="button" onClick={() => setVisible(v => !v)}
+        style={estilos.ojo} aria-label={etiqueta} title={etiqueta}>
+        <OjoIcono tachado={visible} />
+      </button>
+    </div>
+  )
+}
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -69,8 +98,7 @@ export default function Login() {
             </div>
             <div style={m.campo}>
               <label style={m.label}>Contraseña</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                style={m.input} placeholder="••••••••" required />
+              <CampoPassword valor={password} onChange={e => setPassword(e.target.value)} estilos={m} />
             </div>
             <button type="submit" style={m.btn} disabled={cargando}>
               {cargando ? 'Ingresando...' : 'Ingresar →'}
@@ -88,12 +116,6 @@ export default function Login() {
         <div style={s.brandCircle}>AB</div>
         <h1 style={s.brandNombre}>Salón Alto Belgrano</h1>
         <p style={s.brandTagline}>Sistema de control de acceso con códigos QR</p>
-        <div style={s.features}>
-          <div style={s.feature}><span style={s.featureCheck}>✓</span> Gestión de eventos e invitados</div>
-          <div style={s.feature}><span style={s.featureCheck}>✓</span> Envío automático de QR por email</div>
-          <div style={s.feature}><span style={s.featureCheck}>✓</span> Validación en tiempo real en la puerta</div>
-          <div style={s.feature}><span style={s.featureCheck}>✓</span> Control de acceso por rol</div>
-        </div>
       </div>
       <div style={s.derecha}>
         <div style={s.formBox}>
@@ -111,8 +133,7 @@ export default function Login() {
             </div>
             <div style={s.campo}>
               <label style={s.label}>Contraseña</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                style={s.input} placeholder="••••••••" required />
+              <CampoPassword valor={password} onChange={e => setPassword(e.target.value)} estilos={s} />
             </div>
             <button type="submit" style={s.btn} disabled={cargando}>
               {cargando ? 'Ingresando...' : 'Ingresar →'}
@@ -138,6 +159,10 @@ const m = {
   campo: { marginBottom: '16px' },
   label: { display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#374151' },
   input: { width: '100%', padding: '14px', border: '1px solid #d1d5db', borderRadius: '10px', fontSize: '16px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white' },
+  // 44x44 es el área táctil mínima recomendada: el ícono sigue midiendo 18px,
+  // lo que crece es la zona sensible al dedo.
+  inputConOjo: { paddingRight: '52px' },
+  ojo: { position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0 },
   btn: { width: '100%', padding: '15px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', marginTop: '8px' },
   footer: { fontSize: '12px', color: '#94a3b8', textAlign: 'center', marginTop: '24px' },
 }
@@ -148,10 +173,7 @@ const s = {
   izquierda: { flex: 1, backgroundColor: '#0f2554', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '60px', color: 'white' },
   brandCircle: { width: '56px', height: '56px', backgroundColor: '#3b82f6', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '18px', marginBottom: '28px' },
   brandNombre: { fontSize: '30px', fontWeight: '700', margin: '0 0 14px', lineHeight: 1.2 },
-  brandTagline: { fontSize: '16px', color: 'rgba(255,255,255,0.55)', margin: '0 0 48px', lineHeight: 1.6, maxWidth: '340px' },
-  features: { display: 'flex', flexDirection: 'column', gap: '14px' },
-  feature: { fontSize: '14px', color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '10px' },
-  featureCheck: { color: '#60a5fa', fontWeight: '700' },
+  brandTagline: { fontSize: '16px', color: 'rgba(255,255,255,0.55)', margin: 0, lineHeight: 1.6, maxWidth: '340px' },
   derecha: { width: '480px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '48px' },
   formBox: { width: '100%', maxWidth: '360px' },
   formHeader: { marginBottom: '28px' },
@@ -162,6 +184,8 @@ const s = {
   campo: { marginBottom: '18px' },
   label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' },
   input: { width: '100%', padding: '11px 14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box', color: '#111827', backgroundColor: 'white', outline: 'none' },
+  inputConOjo: { paddingRight: '46px' },
+  ojo: { position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', width: '38px', height: '38px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0 },
   btn: { width: '100%', padding: '13px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', marginTop: '4px' },
   footer: { fontSize: '12px', color: '#94a3b8', textAlign: 'center', marginTop: '32px' },
 }
