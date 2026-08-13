@@ -20,18 +20,48 @@ const formatearFecha = (fecha) => {
 // HTML. Sin esto, un nombre con etiquetas convierte la invitación en un vector
 // de phishing enviado desde nuestro propio remitente.
 const generarHtmlEmail = (invitado, evento) => `
-  <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+  <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; color: #1f2937;">
     <h2 style="color: #1a3a6b;">¡Hola ${escaparHtml(invitado.nombre)}!</h2>
-    <p>Estás invitado/a a <strong>${escaparHtml(evento.nombre_evento)}</strong>.</p>
-    <p><strong>Fecha:</strong> ${escaparHtml(formatearFecha(evento.fecha))}</p>
-    <p>Presentá este código QR en la entrada del evento:</p>
+    <p>Estás invitado/a a <strong>${escaparHtml(evento.nombre_evento)}</strong>, en el Salón Alto Belgrano.</p>
+    <p><strong>Fecha:</strong> ${escaparHtml(formatearFecha(evento.fecha))}<br/>
+       <strong>Lugar:</strong> Salón Alto Belgrano, Mendoza</p>
+    <p>Presentá este código QR en la entrada. Podés mostrarlo desde el celular
+       o llevarlo impreso, como te resulte más cómodo.</p>
     <div style="text-align: center; margin: 30px 0;">
-      <img src="cid:qr-code" alt="Código QR" width="250"/>
+      <img src="cid:qr-code" alt="Código QR de tu invitación" width="250"/>
     </div>
-    <p style="color: #666; font-size: 13px;">Este QR es personal e intransferible. Solo puede usarse una vez.</p>
-    <p style="color: #666; font-size: 13px;">Salón Alto Belgrano — Mendoza</p>
+    <p style="color: #4b5563; font-size: 14px;">
+      Tu código es personal e intransferible, y se puede usar una sola vez.
+      Si no vas a poder asistir, avisale a quien te invitó.
+    </p>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
+    <p style="color: #6b7280; font-size: 13px; margin: 0;">
+      Salón Alto Belgrano — Mendoza, Argentina<br/>
+      Recibiste este correo porque figurás en la lista de invitados de este evento.
+    </p>
   </div>
 `
+
+// Alternativa en texto plano. Un correo que es casi solo una imagen y no trae
+// versión de texto puntúa peor en los filtros de spam (Outlook en particular).
+// Además es lo que ven los lectores que no renderizan HTML.
+const generarTextoEmail = (invitado, evento) => `¡Hola ${invitado.nombre}!
+
+Estás invitado/a a ${evento.nombre_evento}, en el Salón Alto Belgrano.
+
+Fecha: ${formatearFecha(evento.fecha)}
+Lugar: Salón Alto Belgrano, Mendoza
+
+Presentá en la entrada el código QR que va adjunto a este correo
+(archivo qr-invitacion.png). Podés mostrarlo desde el celular o
+llevarlo impreso.
+
+Tu código es personal e intransferible, y se puede usar una sola vez.
+Si no vas a poder asistir, avisale a quien te invitó.
+
+--
+Salón Alto Belgrano — Mendoza, Argentina
+Recibiste este correo porque figurás en la lista de invitados de este evento.`
 
 const enviarInvitacion = async (invitado, evento) => {
   const qrBase64 = await QRCode.toDataURL(invitado.qr_token, { width: 300, margin: 2 })
@@ -42,6 +72,10 @@ const enviarInvitacion = async (invitado, evento) => {
     to: invitado.email,
     subject: `Tu invitación para ${evento.nombre_evento}`,
     html: generarHtmlEmail(invitado, evento),
+    text: generarTextoEmail(invitado, evento),
+    // Un Reply-To que apunte a una casilla real evita que las respuestas
+    // reboten. Los filtros penalizan a los dominios que mandan pero no reciben.
+    ...(config.emailRespuesta ? { replyTo: config.emailRespuesta } : {}),
     attachments: [{ filename: 'qr-invitacion.png', content: qrImagen, content_id: 'qr-code' }]
   })
 

@@ -40,6 +40,9 @@ module.exports = {
   // El dominio de pruebas de Resend solo entrega a la casilla dueña de la cuenta.
   // En producción tiene que ser un dominio propio verificado con SPF/DKIM/DMARC.
   emailRemitente: process.env.EMAIL_REMITENTE || 'Alto Belgrano <onboarding@resend.dev>',
+  // Casilla real que recibe las respuestas de los invitados. Si queda vacía no
+  // se manda cabecera Reply-To: mejor eso que apuntar a un buzón inexistente.
+  emailRespuesta: process.env.EMAIL_RESPUESTA || null,
   // Resend en plan gratuito acepta ~2 req/s. Espaciamos los envíos para no
   // comernos un 429 en medio de una importación de 200 invitados.
   emailIntervaloMs: parseInt(process.env.EMAIL_INTERVALO_MS || '600', 10),
