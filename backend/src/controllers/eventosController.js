@@ -92,7 +92,23 @@ const listarEventos = async (req, res) => {
       .order('fecha', { ascending: false })
 
     if (error) throw error
-    res.json({ eventos: data })
+
+    // Antes se ordenaba solo por fecha descendente, así que un evento de dentro
+    // de un año quedaba arriba del de mañana. Lo que importa en el salón es qué
+    // viene primero: los próximos van arriba del más cercano al más lejano, y
+    // debajo los pasados, del más reciente al más viejo.
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+    const proximos = []
+    const pasados = []
+
+    for (const ev of data || []) {
+      (ev.fecha >= hoy ? proximos : pasados).push(ev)
+    }
+
+    proximos.sort((a, b) => a.fecha.localeCompare(b.fecha))
+    pasados.sort((a, b) => b.fecha.localeCompare(a.fecha))
+
+    res.json({ eventos: [...proximos, ...pasados] })
   } catch (error) {
     console.error('Error al listar eventos:', error)
     res.status(500).json({ error: 'Error al obtener los eventos' })

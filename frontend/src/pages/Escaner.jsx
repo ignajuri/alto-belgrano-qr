@@ -4,6 +4,37 @@ import { Html5Qrcode } from 'html5-qrcode'
 import api, { cerrarSesionLocal } from '../services/api'
 import CampoPassword from '../components/CampoPassword'
 
+// SVG inline (la CSP no permite iconos de un CDN). Los tres cuadrados de las
+// esquinas son los patrones de posición que todo QR tiene; el resto son módulos
+// sueltos para que se lea como un código y no como un cuadrado negro.
+const IconoQR = () => (
+  <svg width="46" height="46" viewBox="0 0 29 29" fill="currentColor" aria-hidden="true">
+    {[[0, 0], [22, 0], [0, 22]].map(([x, y]) => (
+      <g key={`${x}-${y}`}>
+        <rect x={x + 0.5} y={y + 0.5} width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <rect x={x + 2.5} y={y + 2.5} width="2" height="2" />
+      </g>
+    ))}
+    <rect x="10" y="1" width="2" height="2" />
+    <rect x="14" y="3" width="2" height="2" />
+    <rect x="10" y="6" width="2" height="2" />
+    <rect x="1" y="10" width="2" height="2" />
+    <rect x="5" y="14" width="2" height="2" />
+    <rect x="10" y="10" width="3" height="3" />
+    <rect x="16" y="10" width="2" height="2" />
+    <rect x="21" y="12" width="2" height="2" />
+    <rect x="25" y="10" width="2" height="2" />
+    <rect x="10" y="16" width="2" height="2" />
+    <rect x="14" y="19" width="2" height="2" />
+    <rect x="19" y="16" width="2" height="2" />
+    <rect x="24" y="17" width="2" height="2" />
+    <rect x="11" y="22" width="2" height="2" />
+    <rect x="15" y="25" width="2" height="2" />
+    <rect x="20" y="21" width="3" height="3" />
+    <rect x="25" y="24" width="2" height="2" />
+  </svg>
+)
+
 const leerUsuarioLocal = () => {
   try {
     return JSON.parse(sessionStorage.getItem('usuario') || '{}')
@@ -22,6 +53,9 @@ export default function Escaner() {
   const [eventos, setEventos] = useState([])
   const [eventoId, setEventoId] = useState('')
   const [cargandoEventos, setCargandoEventos] = useState(true)
+  // El botón "Actualizar ahora" incrementa esto y así vuelve a correr el efecto
+  // que trae los eventos, sin duplicar la lógica de carga fuera de él.
+  const [refrescoEventos, setRefrescoEventos] = useState(0)
   const scannerRef = useRef(null)
   // El callback del escáner se registra una sola vez al arrancar la cámara;
   // este ref le da acceso al evento vigente sin recrear el escáner.
@@ -47,23 +81,34 @@ export default function Escaner() {
     }
   }, [])
 
-  // Los eventos activos son los que están dentro de su ventana de validez.
-  // El guardia elige sobre cuál escanea; el backend rechaza cualquier QR que
-  // pertenezca a otro evento.
+  // Los eventos activos son los que están dentro de su ventana de validez: no
+  // es "el más próximo" sino todos los que se pueden escanear ahora, que pueden
+  // ser varios. El backend lo calcula contra la hora actual en cada consulta.
+  //
+  // Se refresca cada minuto porque la ventana se abre sola: un guardia que
+  // llega temprano y deja la app abierta veía "no hay eventos" para siempre,
+  // aunque la ventana se hubiera abierto mientras tanto.
   useEffect(() => {
-    const cargarEventos = async () => {
+    let vivo = true
+
+    const cargar = async () => {
       try {
         const res = await api.get('/eventos/activos')
+        if (!vivo) return
         setEventos(res.data.eventos)
+        // Si hay uno solo, lo dejamos elegido para ahorrarle un toque al guardia.
         if (res.data.eventos.length === 1) setEventoId(res.data.eventos[0].id)
       } catch {
-        setEventos([])
+        if (vivo) setEventos([])
       } finally {
-        setCargandoEventos(false)
+        if (vivo) setCargandoEventos(false)
       }
     }
-    cargarEventos()
-  }, [])
+
+    cargar()
+    const intervalo = setInterval(() => { if (!document.hidden) cargar() }, 60000)
+    return () => { vivo = false; clearInterval(intervalo) }
+  }, [refrescoEventos])
 
   const iniciarEscaner = async () => {
     setResultado(null)
@@ -202,7 +247,7 @@ export default function Escaner() {
             {!escaneando && !cargando && !resultado && (
               <div style={es.idleState}>
                 <div style={es.idleIconBox}>
-                  <span style={es.idleIcon}>⬛</span>
+                  <IconoQR />
                 </div>
                 <h2 style={es.idleTitulo}>Escanear código QR</h2>
 
@@ -211,10 +256,13 @@ export default function Escaner() {
                 ) : eventos.length === 0 ? (
                   <div style={es.avisoSinEventos}>
                     <p style={{ margin: 0, fontWeight: 600 }}>No hay eventos activos</p>
-                    <p style={{ margin: '6px 0 0', fontSize: '13px' }}>
-                      Los QR solo se pueden validar durante la ventana del evento.
-                      Consultá con administración.
+                    <p style={{ margin: '6px 0 12px', fontSize: '13px' }}>
+                      Los QR se pueden validar desde el mediodía anterior al evento.
+                      La lista se actualiza sola cada minuto.
                     </p>
+                    <button onClick={() => setRefrescoEventos(n => n + 1)} style={es.btnActualizar}>
+                      Actualizar ahora
+                    </button>
                   </div>
                 ) : (
                   <>
@@ -366,14 +414,14 @@ const es = {
   lector: { width: '100%' },
   lectorOculto: { height: 0, overflow: 'hidden' },
   idleState: { padding: '48px 32px', textAlign: 'center' },
-  idleIconBox: { width: '80px', height: '80px', backgroundColor: '#eff6ff', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '36px' },
-  idleIcon: { fontSize: '36px' },
+  idleIconBox: { width: '80px', height: '80px', backgroundColor: '#eff6ff', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', color: '#1d4ed8' },
   idleTitulo: { fontSize: '20px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px' },
   idleDesc: { fontSize: '14px', color: '#64748b', margin: '0 0 28px', lineHeight: 1.6 },
   btnEscanear: { width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
   btnEscanearDeshabilitado: { width: '100%', padding: '14px', backgroundColor: '#cbd5e1', color: '#64748b', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'not-allowed' },
   campoEvento: { marginBottom: '20px', textAlign: 'left' },
   avisoSinEventos: { backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '10px', padding: '16px', textAlign: 'left' },
+  btnActualizar: { padding: '8px 14px', backgroundColor: 'white', color: '#92400e', border: '1px solid #fcd34d', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' },
   ayuda: { fontSize: '12px', color: '#64748b', margin: '6px 0 0', lineHeight: 1.4 },
   btnDetener: { margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '15px', cursor: 'pointer', fontWeight: '500', width: 'calc(100% - 32px)' },
   cargandoArea: { padding: '60px 32px', textAlign: 'center' },
