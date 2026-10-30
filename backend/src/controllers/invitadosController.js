@@ -1,6 +1,9 @@
 const supabase = require('../config/supabase')
 const { leerInvitados } = require('../services/excelService')
-const { enviarInvitacion, enviarInvitacionesEnLote } = require('../services/emailService')
+const {
+  enviarInvitacion, enviarInvitacionesEnLote, enviarEntradasGrupo, enviarGruposEnLote
+} = require('../services/emailService')
+const { enviosPendientesDeGrupos } = require('./gruposController')
 const { registrar, ACCIONES } = require('../utils/auditoria')
 const {
   esUuid, texto, normalizarEmail, esEmailValido, normalizarDni, esDniValido
@@ -43,12 +46,16 @@ const importarInvitados = async (req, res) => {
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, limite_invitados')
+      .select('id, nombre_evento, fecha, limite_invitados, tipo')
       .eq('id', evento_id)
       .maybeSingle()
 
     if (!evento) {
       return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    if (evento.tipo === 'egresados') {
+      return res.status(400).json({ error: 'Este evento es de egresados: usá la carga por familias' })
     }
 
     const { invitados, errores, totalErrores, error: errorLectura } = await leerInvitados(req.file.buffer)
@@ -142,12 +149,16 @@ const crearInvitado = async (req, res) => {
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, limite_invitados, datos_purgados_en')
+      .select('id, nombre_evento, fecha, limite_invitados, datos_purgados_en, tipo')
       .eq('id', evento_id)
       .maybeSingle()
 
     if (!evento) {
       return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    if (evento.tipo === 'egresados') {
+      return res.status(400).json({ error: 'Este evento es de egresados: las entradas se cargan por familia' })
     }
 
     // Un evento ya purgado no admite datos personales nuevos: sus invitados se
@@ -225,13 +236,17 @@ const editarInvitado = async (req, res) => {
   try {
     const { data: actual } = await supabase
       .from('invitados')
-      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado')
+      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado, grupo_id')
       .eq('id', invitadoId)
       .eq('evento_id', evento_id)
       .maybeSingle()
 
     if (!actual) {
       return res.status(404).json({ error: 'Invitado no encontrado' })
+    }
+
+    if (actual.grupo_id) {
+      return res.status(400).json({ error: 'Esta entrada pertenece a una familia: editá los datos de la familia' })
     }
 
     const { data: actualizado, error } = await supabase
@@ -312,7 +327,7 @@ const reenviarQR = async (req, res) => {
     // otro evento se cuele por esta ruta.
     const { data: invitado } = await supabase
       .from('invitados')
-      .select('id, nombre, email, qr_token')
+      .select('id, nombre, email, qr_token, grupo_id, numero, tipo_entrada')
       .eq('id', invitadoId)
       .eq('evento_id', evento_id)
       .maybeSingle()
@@ -323,7 +338,7 @@ const reenviarQR = async (req, res) => {
 
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha')
+      .select('id, nombre_evento, fecha, inicio_baile')
       .eq('id', evento_id)
       .maybeSingle()
 
@@ -331,7 +346,21 @@ const reenviarQR = async (req, res) => {
       return res.status(404).json({ error: 'Evento no encontrado' })
     }
 
-    await enviarInvitacion(invitado, evento)
+    if (invitado.grupo_id) {
+      // Entrada de una familia: se reenvía solo esa, con el formato de
+      // egresados ("Entrada 3 de 5 · Cena + baile").
+      const { data: hermanas } = await supabase
+        .from('invitados')
+        .select('numero')
+        .eq('grupo_id', invitado.grupo_id)
+      const total = (hermanas || []).reduce((m, e) => Math.max(m, e.numero || 0), 0)
+      await enviarEntradasGrupo(
+        { id: invitado.grupo_id, nombre: invitado.nombre, email: invitado.email },
+        [invitado], evento, { modo: 'reenvio', total }
+      )
+    } else {
+      await enviarInvitacion(invitado, evento)
+    }
 
     await registrar(req, ACCIONES.QR_REENVIADO, {
       entidad: 'invitados', entidadId: invitadoId, detalle: { evento_id }
@@ -357,7 +386,7 @@ const listarInvitados = async (req, res) => {
     // acceso y no tiene por qué viajar al navegador ni quedar en su memoria.
     const { data, error } = await supabase
       .from('invitados')
-      .select('id, nombre, apellido, dni, email, qr_enviado, ingresado, fecha_ingreso')
+      .select('id, nombre, apellido, dni, email, qr_enviado, ingresado, fecha_ingreso, grupo_id, numero, tipo_entrada')
       .eq('evento_id', evento_id)
       .order('apellido', { ascending: true })
 
@@ -472,7 +501,68 @@ const eliminarInvitado = async (req, res) => {
   }
 }
 
+// Manda todo lo que quedó sin enviar: típicamente porque se agotó la cuota
+// diaria de Resend en medio de una importación grande. Sirve para los dos
+// tipos de evento. Corre en segundo plano, igual que la importación.
+const reenviarPendientes = async (req, res) => {
+  const { id: evento_id } = req.params
+
+  if (!esUuid(evento_id)) {
+    return res.status(400).json({ error: 'Identificador de evento inválido' })
+  }
+
+  try {
+    const { data: evento } = await supabase
+      .from('eventos')
+      .select('id, nombre_evento, fecha, tipo, inicio_baile')
+      .eq('id', evento_id)
+      .maybeSingle()
+
+    if (!evento) {
+      return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    let cantidad = 0
+
+    if (evento.tipo === 'egresados') {
+      const envios = await enviosPendientesDeGrupos(evento)
+      cantidad = envios.length
+      if (cantidad > 0) {
+        enviarGruposEnLote(envios, evento).catch(err =>
+          console.error('[email] el lote de pendientes falló por completo:', err.message)
+        )
+      }
+    } else {
+      const { data: pendientes, error } = await supabase
+        .from('invitados')
+        .select('id, nombre, email, qr_token')
+        .eq('evento_id', evento_id)
+        .eq('qr_enviado', false)
+      if (error) throw error
+      cantidad = pendientes?.length || 0
+      if (cantidad > 0) {
+        enviarInvitacionesEnLote(pendientes, evento).catch(err =>
+          console.error('[email] el lote de pendientes falló por completo:', err.message)
+        )
+      }
+    }
+
+    if (cantidad === 0) {
+      return res.json({ mensaje: 'No hay correos pendientes de envío.', cantidad })
+    }
+
+    await registrar(req, ACCIONES.PENDIENTES_REENVIADOS, {
+      entidad: 'eventos', entidadId: evento_id, detalle: { correos: cantidad }
+    })
+
+    res.json({ mensaje: `Se están enviando ${cantidad} correo(s) pendiente(s).`, cantidad })
+  } catch (error) {
+    console.error('Error al reenviar pendientes:', error)
+    res.status(500).json({ error: 'Error al reenviar los pendientes' })
+  }
+}
+
 module.exports = {
-  importarInvitados, crearInvitado, editarInvitado,
+  importarInvitados, crearInvitado, editarInvitado, reenviarPendientes,
   reenviarQR, listarInvitados, eliminarInvitado, deshacerIngreso
 }

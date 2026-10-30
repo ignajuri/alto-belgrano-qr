@@ -307,10 +307,30 @@ export default function Escaner() {
                 </p>
                 {resultado.detalle && (
                   <div style={es.detalleBox}>
-                    <div style={es.detalleItem}>
-                      <span style={es.detalleKey}>Nombre</span>
-                      <span style={es.detalleVal}>{resultado.detalle.nombre} {resultado.detalle.apellido}</span>
-                    </div>
+                    {/* Egresados: familia, número de entrada y tipo, bien
+                        visible para que el guardia distinga cena de baile. */}
+                    {resultado.detalle.grupo ? (
+                      <>
+                        {resultado.detalle.tipo_entrada && (
+                          <div style={resultado.detalle.tipo_entrada === 'cena' ? es.tipoCena : es.tipoBaile}>
+                            {resultado.detalle.tipo_entrada === 'cena' ? '🍽️ CENA + BAILE' : '🎶 SOLO BAILE'}
+                          </div>
+                        )}
+                        <div style={es.detalleItem}>
+                          <span style={es.detalleKey}>Familia</span>
+                          <span style={es.detalleVal}>{resultado.detalle.grupo}</span>
+                        </div>
+                        <div style={es.detalleItem}>
+                          <span style={es.detalleKey}>Entrada</span>
+                          <span style={es.detalleVal}>{resultado.detalle.entrada}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={es.detalleItem}>
+                        <span style={es.detalleKey}>Nombre</span>
+                        <span style={es.detalleVal}>{resultado.detalle.nombre} {resultado.detalle.apellido}</span>
+                      </div>
+                    )}
                     {resultado.detalle.dni && (
                       <div style={es.detalleItem}>
                         <span style={es.detalleKey}>DNI</span>
@@ -436,6 +456,8 @@ const es = {
   detalleBox: { backgroundColor: 'white', borderRadius: '10px', padding: '16px', marginBottom: '20px', textAlign: 'left', border: '1px solid #e2e8f0' },
   detalleItem: { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9' },
   detalleKey: { fontSize: '13px', color: '#64748b', fontWeight: '500' },
+  tipoCena: { textAlign: 'center', fontSize: '16px', fontWeight: '800', letterSpacing: '0.04em', color: '#15803d', backgroundColor: '#dcfce7', border: '1px solid #86efac', borderRadius: '8px', padding: '10px', marginBottom: '10px' },
+  tipoBaile: { textAlign: 'center', fontSize: '16px', fontWeight: '800', letterSpacing: '0.04em', color: '#6d28d9', backgroundColor: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: '8px', padding: '10px', marginBottom: '10px' },
   detalleVal: { fontSize: '13px', color: '#0f172a', fontWeight: '500' },
   btnNuevo: { width: '100%', padding: '13px', backgroundColor: '#0f2554', color: 'white', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' },
   formCard: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '420px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' },

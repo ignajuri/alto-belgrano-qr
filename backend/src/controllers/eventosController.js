@@ -1,7 +1,28 @@
 const supabase = require('../config/supabase')
 const { registrar, ACCIONES } = require('../utils/auditoria')
 const { calcularVentana } = require('../utils/ventanaQr')
-const { esUuid, texto, esFechaValida, enteroPositivo } = require('../utils/validacion')
+const { esUuid, texto, esFechaValida, enteroPositivo, TIPOS_EVENTO } = require('../utils/validacion')
+
+const FECHA_HORA_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+
+// El formulario manda la hora del baile como "AAAA-MM-DDTHH:mm" en hora
+// argentina (input datetime-local). Se guarda como timestamptz. Tiene que caer
+// entre el mediodía del día del evento y el mediodía siguiente: el baile de
+// una cena de egresados casi siempre arranca pasada la medianoche.
+const parsearInicioBaile = (valor, fecha) => {
+  if (valor === null || valor === undefined || valor === '') return { valor: null }
+  if (typeof valor !== 'string' || !FECHA_HORA_RE.test(valor)) {
+    return { error: 'La hora de inicio del baile es inválida' }
+  }
+  const inicio = new Date(`${valor}:00-03:00`)
+  const desde = new Date(`${fecha}T12:00:00-03:00`)
+  const hasta = new Date(desde.getTime() + 24 * 60 * 60 * 1000)
+  if (Number.isNaN(inicio.getTime())) return { error: 'La hora de inicio del baile es inválida' }
+  if (inicio < desde || inicio > hasta) {
+    return { error: 'El inicio del baile tiene que ser entre el mediodía del día del evento y el mediodía siguiente' }
+  }
+  return { valor: inicio.toISOString() }
+}
 
 // Valida y normaliza el cuerpo de creación/edición de eventos.
 // Devuelve { datos } o { error }.
@@ -20,13 +41,23 @@ const parsearEvento = (body) => {
     return { error: 'La fecha debe tener el formato AAAA-MM-DD' }
   }
 
+  const tipo = body?.tipo === undefined || body?.tipo === '' ? 'quince' : body.tipo
+  if (!TIPOS_EVENTO.includes(tipo)) {
+    return { error: 'El tipo de evento es inválido' }
+  }
+
+  const baile = parsearInicioBaile(body?.inicio_baile, fecha)
+  if (baile.error) return { error: baile.error }
+
   return {
     datos: {
       nombre_evento,
       fecha,
+      tipo,
       limite_invitados,
       anfitrion_nombre,
-      anfitrion_telefono: anfitrion_telefono || null
+      anfitrion_telefono: anfitrion_telefono || null,
+      inicio_baile: tipo === 'egresados' ? baile.valor : null
     }
   }
 }
@@ -59,10 +90,19 @@ const editarEvento = async (req, res) => {
   const { id } = req.params
   if (!esUuid(id)) return res.status(400).json({ error: 'Identificador inválido' })
 
-  const { datos, error: errorValidacion } = parsearEvento(req.body)
-  if (errorValidacion) return res.status(400).json({ error: errorValidacion })
-
   try {
+    // El tipo no se cambia después de crear el evento: un cumpleaños con
+    // invitados por DNI no se puede convertir en una fiesta por familias.
+    const { data: actual } = await supabase
+      .from('eventos')
+      .select('id, tipo')
+      .eq('id', id)
+      .maybeSingle()
+    if (!actual) return res.status(404).json({ error: 'Evento no encontrado' })
+
+    const { datos, error: errorValidacion } = parsearEvento({ ...req.body, tipo: actual.tipo })
+    if (errorValidacion) return res.status(400).json({ error: errorValidacion })
+
     const { data, error } = await supabase
       .from('eventos')
       .update(datos)
@@ -128,7 +168,7 @@ const listarEventosActivos = async (req, res) => {
 
     const { data, error } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha')
+      .select('id, nombre_evento, fecha, tipo')
       .gte('fecha', desde)
       .lte('fecha', hasta)
       .order('fecha', { ascending: true })
@@ -154,7 +194,7 @@ const obtenerEvento = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('eventos')
-      .select('*, invitados(id, nombre, apellido, dni, email, qr_enviado, ingresado, fecha_ingreso)')
+      .select('*, invitados(id, nombre, apellido, dni, email, qr_enviado, ingresado, fecha_ingreso, grupo_id, numero, tipo_entrada)')
       .eq('id', id)
       .maybeSingle()
 

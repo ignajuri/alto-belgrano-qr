@@ -9,7 +9,7 @@ antes de correr la migración, el login va a fallar.
 
 1. **Supabase** → SQL Editor → ejecutar las migraciones de `backend/migrations/`
    en orden numérico (`001_seguridad.sql`, `002_retencion_datos.sql`,
-   `003_recuperacion_password.sql`).
+   `003_recuperacion_password.sql`, `004_egresados.sql`).
 2. **Render** → cargar las variables de entorno nuevas (ver abajo) → redeploy.
 3. **Vercel** → verificar `VITE_API_URL` → redeploy.
 

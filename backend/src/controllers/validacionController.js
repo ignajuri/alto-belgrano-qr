@@ -3,6 +3,33 @@ const { registrar, ACCIONES } = require('../utils/auditoria')
 const { evaluarVentana } = require('../utils/ventanaQr')
 const { esUuid } = require('../utils/validacion')
 
+const ZONA_AR = 'America/Argentina/Buenos_Aires'
+
+const formatearHora = (fechaHora) =>
+  new Date(fechaHora).toLocaleTimeString('es-AR', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: ZONA_AR
+  })
+
+// Datos que ve el guardia en pantalla. En un cumpleaños: nombre y DNI. En
+// egresados: la familia, qué entrada es ("3 de 5") y si es de cena o de baile.
+const armarDetalle = async (invitado) => {
+  if (!invitado.grupo_id) {
+    return { nombre: invitado.nombre, apellido: invitado.apellido }
+  }
+
+  const { data: hermanas } = await supabase
+    .from('invitados')
+    .select('numero')
+    .eq('grupo_id', invitado.grupo_id)
+  const total = (hermanas || []).reduce((m, e) => Math.max(m, e.numero || 0), 0)
+
+  return {
+    grupo: invitado.grupos?.nombre || invitado.nombre,
+    entrada: `Entrada ${invitado.numero} de ${total}`,
+    tipo_entrada: invitado.tipo_entrada
+  }
+}
+
 const rechazo = (motivo, detalle) => ({
   valido: false,
   motivo,
@@ -28,7 +55,8 @@ const validarQR = async (req, res) => {
   try {
     const { data: invitado } = await supabase
       .from('invitados')
-      .select('id, nombre, apellido, dni, evento_id, ingresado, fecha_ingreso, eventos(nombre_evento, fecha)')
+      .select('id, nombre, apellido, dni, evento_id, ingresado, fecha_ingreso, grupo_id, numero, tipo_entrada, ' +
+              'eventos(nombre_evento, fecha, inicio_baile), grupos(nombre)')
       .eq('qr_token', token)
       .maybeSingle()
 
@@ -37,7 +65,7 @@ const validarQR = async (req, res) => {
       return res.status(404).json(rechazo('QR no reconocido'))
     }
 
-    const nombreCompleto = { nombre: invitado.nombre, apellido: invitado.apellido }
+    const nombreCompleto = await armarDetalle(invitado)
 
     // El escáner opera sobre un evento seleccionado. Un QR de otro evento se
     // rechaza automáticamente en vez de depender de que el guardia note la
@@ -70,6 +98,19 @@ const validarQR = async (req, res) => {
         entidad: 'invitados', entidadId: invitado.id, detalle: { motivo: 'fuera_de_ventana' }
       })
       return res.status(200).json(rechazo(motivoVentana, {
+        ...nombreCompleto,
+        evento: invitado.eventos?.nombre_evento
+      }))
+    }
+
+    // Las entradas de baile no entran a la cena. Las de cena incluyen el
+    // baile, así que no tienen restricción horaria.
+    const inicioBaile = invitado.eventos?.inicio_baile
+    if (invitado.tipo_entrada === 'baile' && inicioBaile && new Date() < new Date(inicioBaile)) {
+      await registrar(req, ACCIONES.QR_RECHAZADO, {
+        entidad: 'invitados', entidadId: invitado.id, detalle: { motivo: 'baile_antes_de_hora' }
+      })
+      return res.status(200).json(rechazo(`Entrada solo para el baile: habilitada desde las ${formatearHora(inicioBaile)}`, {
         ...nombreCompleto,
         evento: invitado.eventos?.nombre_evento
       }))
@@ -108,7 +149,7 @@ const validarQR = async (req, res) => {
       color: 'verde',
       detalle: {
         ...nombreCompleto,
-        dni: invitado.dni,
+        ...(invitado.dni ? { dni: invitado.dni } : {}),
         evento: invitado.eventos?.nombre_evento
       }
     })

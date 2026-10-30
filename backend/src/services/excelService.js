@@ -1,5 +1,7 @@
 const ExcelJS = require('exceljs')
-const { normalizarEmail, esEmailValido, normalizarDni, esDniValido, texto } = require('../utils/validacion')
+const {
+  normalizarEmail, esEmailValido, normalizarDni, esDniValido, texto, enteroNoNegativo
+} = require('../utils/validacion')
 
 const MAX_FILAS = 2000
 
@@ -85,4 +87,100 @@ const leerInvitados = async (buffer) => {
   return { invitados, errores: errores.slice(0, 20), totalErrores: errores.length }
 }
 
-module.exports = { leerInvitados, MAX_FILAS }
+// ── Egresados: una fila por familia ─────────────────────────────────────────
+
+// Máximo de entradas por familia en una fila. Frena un "500" tipeado por
+// error en vez de 5, que generaría 500 QR y un correo inmanejable.
+const MAX_ENTRADAS_POR_FAMILIA = 30
+
+// Encabezado → campo. Se aceptan variantes comunes para que el Excel armado a
+// mano no falle por escribir "Correo" en vez de "email" o "Teléfono" con tilde.
+const ALIAS_GRUPOS = {
+  familia: 'familia', nombre: 'familia', grupo: 'familia',
+  email: 'email', correo: 'email', mail: 'email', 'e-mail': 'email',
+  telefono: 'telefono', celular: 'telefono', whatsapp: 'telefono',
+  cena: 'cena',
+  baile: 'baile', 'post cena': 'baile', postcena: 'baile'
+}
+const COLUMNAS_GRUPOS_OBLIGATORIAS = ['familia', 'email', 'cena', 'baile']
+
+const normalizarEncabezado = (valor) =>
+  celdaATexto(valor).trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+
+const leerGrupos = async (buffer) => {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+
+  const hoja = workbook.worksheets[0]
+  if (!hoja) return { error: 'El archivo no contiene ninguna hoja' }
+
+  const encabezados = {}
+  hoja.getRow(1).eachCell((celda, col) => {
+    const campo = ALIAS_GRUPOS[normalizarEncabezado(celda.value)]
+    if (campo && !encabezados[campo]) encabezados[campo] = col
+  })
+
+  const faltantes = COLUMNAS_GRUPOS_OBLIGATORIAS.filter(c => !encabezados[c])
+  if (faltantes.length > 0) {
+    return {
+      error: 'El Excel de egresados debe tener las columnas: familia, email, telefono (opcional), cena, baile. ' +
+             `Faltan: ${faltantes.join(', ')}`
+    }
+  }
+
+  const filasTotales = hoja.rowCount - 1
+  if (filasTotales > MAX_FILAS) {
+    return { error: `El archivo tiene ${filasTotales} filas. El máximo permitido es ${MAX_FILAS}.` }
+  }
+
+  const errores = []
+  const grupos = []
+  const emailsEnArchivo = new Map()
+
+  for (let n = 2; n <= hoja.rowCount; n++) {
+    const fila = hoja.getRow(n)
+    const leer = (campo) => encabezados[campo]
+      ? celdaATexto(fila.getCell(encabezados[campo]).value).trim()
+      : ''
+
+    const familia = texto(leer('familia'), 160)
+    const email = normalizarEmail(leer('email'))
+    const telefono = texto(leer('telefono'), 40)
+    const cenaTxt = leer('cena')
+    const baileTxt = leer('baile')
+
+    if (!familia && !email && !telefono && !cenaTxt && !baileTxt) continue
+
+    if (!familia) { errores.push(`Fila ${n}: falta el nombre de la familia`); continue }
+    if (!email) { errores.push(`Fila ${n}: falta el email`); continue }
+    if (!esEmailValido(email)) { errores.push(`Fila ${n}: el email "${email}" no es válido`); continue }
+
+    const cena = enteroNoNegativo(cenaTxt, MAX_ENTRADAS_POR_FAMILIA)
+    const baile = enteroNoNegativo(baileTxt, MAX_ENTRADAS_POR_FAMILIA)
+    if (cena === null) { errores.push(`Fila ${n}: la cantidad de cena "${cenaTxt}" no es válida (0 a ${MAX_ENTRADAS_POR_FAMILIA})`); continue }
+    if (baile === null) { errores.push(`Fila ${n}: la cantidad de baile "${baileTxt}" no es válida (0 a ${MAX_ENTRADAS_POR_FAMILIA})`); continue }
+    if (cena + baile === 0) { errores.push(`Fila ${n}: ${familia} no tiene ninguna entrada`); continue }
+    if (cena + baile > MAX_ENTRADAS_POR_FAMILIA) {
+      errores.push(`Fila ${n}: ${familia} suma ${cena + baile} entradas, el máximo por familia es ${MAX_ENTRADAS_POR_FAMILIA}`)
+      continue
+    }
+
+    // El correo identifica a la familia. Dos filas con el mismo correo casi
+    // siempre son una ampliación cargada abajo en vez de actualizar la fila
+    // original: sumarlas a ciegas duplicaría entradas, así que se frena.
+    if (emailsEnArchivo.has(email)) {
+      errores.push(`Fila ${n}: el email ${email} ya aparece en la fila ${emailsEnArchivo.get(email)}. ` +
+                   'Si la familia compró más entradas, actualizá la cantidad en esa fila.')
+      continue
+    }
+    emailsEnArchivo.set(email, n)
+
+    grupos.push({ familia, email, telefono: telefono || null, cena, baile, fila: n })
+  }
+
+  return { grupos, errores: errores.slice(0, 20), totalErrores: errores.length }
+}
+
+module.exports = { leerInvitados, leerGrupos, MAX_FILAS, MAX_ENTRADAS_POR_FAMILIA }
