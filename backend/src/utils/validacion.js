@@ -42,7 +42,22 @@ const enteroPositivo = (valor, max = 100000) => {
   return n
 }
 
+// Cantidades de entradas: 0 es válido (una familia puede comprar solo baile).
+const enteroNoNegativo = (valor, max = 1000) => {
+  if (valor === null || valor === undefined || String(valor).trim() === '') return 0
+  const s = String(valor).trim()
+  if (!/^\d+$/.test(s)) return null
+  const n = parseInt(s, 10)
+  return n > max ? null : n
+}
+
+const TIPOS_EVENTO = ['quince', 'egresados']
+const TIPOS_ENTRADA = ['cena', 'baile']
+
 module.exports = {
+  enteroNoNegativo,
+  TIPOS_EVENTO,
+  TIPOS_ENTRADA,
   esUuid,
   esEmailValido,
   normalizarEmail,

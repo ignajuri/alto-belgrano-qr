@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import api, { cerrarSesionLocal } from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
 import CampoPassword from '../components/CampoPassword'
+import VistaEgresados from './VistaEgresados'
 
 const leerUsuarioLocal = () => {
   try {
@@ -13,6 +14,19 @@ const leerUsuarioLocal = () => {
 }
 
 const etiquetaRol = (rol) => (rol === 'admin' ? 'Administrador' : 'Guardia')
+
+// El backend guarda el inicio del baile como timestamp; el input datetime-local
+// trabaja con "AAAA-MM-DDTHH:mm" en hora local argentina (UTC-3 fijo).
+const isoALocalAR = (iso) => {
+  if (!iso) return ''
+  const d = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000)
+  return d.toISOString().slice(0, 16)
+}
+
+const EVENTO_VACIO = {
+  tipo: 'quince', nombre_evento: '', fecha: '', limite_invitados: '',
+  anfitrion_nombre: '', anfitrion_telefono: '', inicio_baile: ''
+}
 
 export default function Dashboard() {
   const [eventos, setEventos] = useState([])
@@ -35,10 +49,7 @@ export default function Dashboard() {
 
   const usuarioLocal = leerUsuarioLocal()
 
-  const [nuevoEvento, setNuevoEvento] = useState({
-    nombre_evento: '', fecha: '', limite_invitados: '',
-    anfitrion_nombre: '', anfitrion_telefono: ''
-  })
+  const [nuevoEvento, setNuevoEvento] = useState(EVENTO_VACIO)
   const [nuevoUsuario, setNuevoUsuario] = useState({
     nombre: '', email: '', password: '', confirmarPassword: '', rol: 'guardia'
   })
@@ -46,7 +57,7 @@ export default function Dashboard() {
     nombre: '', email: '', password: ''
   })
   const [formEdicionEvento, setFormEdicionEvento] = useState({
-    nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: ''
+    nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: '', inicio_baile: ''
   })
   const [miPerfil, setMiPerfil] = useState({
     nombre: '', email: '', passwordActual: '', password: '', confirmarPassword: ''
@@ -90,7 +101,8 @@ export default function Dashboard() {
   // policy expondría públicamente los qr_token, así que la vía correcta es
   // consultar al backend, que es quien tiene la service key.
   useEffect(() => {
-    if (vistaActual !== 'invitados' || !eventoSeleccionado) return
+    // Los eventos de egresados refrescan su propia vista por familias.
+    if (vistaActual !== 'invitados' || !eventoSeleccionado || eventoSeleccionado.tipo === 'egresados') return
 
     const eventoId = eventoSeleccionado.id
     const intervalo = setInterval(async () => {
@@ -117,13 +129,17 @@ export default function Dashboard() {
     e.preventDefault()
     setCargando(true)
     try {
-      await api.post('/eventos', { ...nuevoEvento, limite_invitados: parseInt(nuevoEvento.limite_invitados) })
+      await api.post('/eventos', {
+        ...nuevoEvento,
+        limite_invitados: parseInt(nuevoEvento.limite_invitados),
+        inicio_baile: nuevoEvento.tipo === 'egresados' ? nuevoEvento.inicio_baile : ''
+      })
       mostrarMensaje('Evento creado correctamente')
-      setNuevoEvento({ nombre_evento: '', fecha: '', limite_invitados: '', anfitrion_nombre: '', anfitrion_telefono: '' })
+      setNuevoEvento(EVENTO_VACIO)
       await cargarEventos()
       setTimeout(() => setVistaActual('eventos'), 1500)
-    } catch {
-      mostrarMensaje('Error al crear el evento')
+    } catch (err) {
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo crear el evento'))
     } finally { setCargando(false) }
   }
 
@@ -134,7 +150,8 @@ export default function Dashboard() {
       fecha: ev.fecha,
       limite_invitados: ev.limite_invitados,
       anfitrion_nombre: ev.anfitrion_nombre,
-      anfitrion_telefono: ev.anfitrion_telefono || ''
+      anfitrion_telefono: ev.anfitrion_telefono || '',
+      inicio_baile: isoALocalAR(ev.inicio_baile)
     })
   }
 
@@ -149,8 +166,8 @@ export default function Dashboard() {
       mostrarMensaje('Evento actualizado correctamente')
       setEventoEditando(null)
       await cargarEventos()
-    } catch {
-      mostrarMensaje('Error al actualizar el evento')
+    } catch (err) {
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudo actualizar el evento'))
     } finally { setCargando(false) }
   }
 
@@ -363,6 +380,18 @@ export default function Dashboard() {
     } finally { setReEnviando(null) }
   }
 
+  // Manda los QR que no salieron (por ejemplo, si se agotó la cuota diaria
+  // del proveedor de correo en medio de una importación grande).
+  const reenviarPendientes = async () => {
+    setCargando(true)
+    try {
+      const res = await api.post(`/eventos/${eventoSeleccionado.id}/invitados/reenviar-pendientes`)
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
+    } catch (err) {
+      mostrarMensaje('Error: ' + (err.response?.data?.error || 'no se pudieron reenviar los pendientes'))
+    } finally { setCargando(false) }
+  }
+
   const cerrarSesion = async () => {
     // Se avisa al backend para dejar registro en la auditoría; si falla, el
     // token local se descarta igual.
@@ -407,7 +436,7 @@ export default function Dashboard() {
   const contenido = (
     <div style={isMobile ? e.contenidoMobile : e.contenido}>
       {mensaje && (
-        <div style={mensaje.includes('Error') || mensaje.includes('no') ? e.alertaError : e.alerta}>
+        <div style={!mensaje.startsWith('✓') && (mensaje.includes('Error') || mensaje.includes('no')) ? e.alertaError : e.alerta}>
           {mensaje}
         </div>
       )}
@@ -527,6 +556,15 @@ export default function Dashboard() {
                       style={e.input} required={!opcional} />
                   </div>
                 ))}
+                {eventoEditando.tipo === 'egresados' && (
+                  <div style={e.campo}>
+                    <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
+                    <input type="datetime-local" value={formEdicionEvento.inicio_baile}
+                      onChange={ev => setFormEdicionEvento({ ...formEdicionEvento, inicio_baile: ev.target.value })}
+                      style={e.input} />
+                    <p style={e.ayuda}>Antes de esta hora, las entradas de solo baile se rechazan en la puerta.</p>
+                  </div>
+                )}
               </div>
               <div style={e.modalBotones}>
                 <button type="button" onClick={() => setEventoEditando(null)} style={e.btnSecundario}>Cancelar</button>
@@ -552,7 +590,12 @@ export default function Dashboard() {
               <div key={ev.id} style={isMobile ? e.cardMobile : e.card}>
                 {!isMobile && <div style={e.cardAccent}></div>}
                 <div style={e.cardInfo}>
-                  <h3 style={e.cardTitulo}>{ev.nombre_evento}</h3>
+                  <h3 style={e.cardTitulo}>
+                    {ev.nombre_evento}{' '}
+                    <span style={ev.tipo === 'egresados' ? e.badgeGuardia : e.badgeAdmin}>
+                      {ev.tipo === 'egresados' ? 'Egresados' : 'Cumpleaños de 15'}
+                    </span>
+                  </h3>
                   <div style={isMobile ? e.cardMetaMobile : e.cardMeta}>
                     <span style={e.cardMetaItem}>📅 {new Date(ev.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
                     <span style={e.cardMetaItem}>👥 Límite: {ev.limite_invitados}</span>
@@ -560,7 +603,9 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div style={isMobile ? e.cardAccionesMobile : e.cardAcciones}>
-                  <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>Ver invitados</button>
+                  <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>
+                    {ev.tipo === 'egresados' ? 'Ver entradas' : 'Ver invitados'}
+                  </button>
                   <button onClick={() => abrirEdicionEvento(ev)} style={e.btnSecundario}>Editar</button>
                   <button onClick={() => eliminarEvento(ev.id)} style={e.btnDanger}>Eliminar</button>
                 </div>
@@ -573,13 +618,29 @@ export default function Dashboard() {
       {vistaActual === 'crear' && (
         <div style={isMobile ? e.formContenedorMobile : e.formContenedor}>
           <form onSubmit={crearEvento}>
-            {[
+            <div style={e.campo}>
+              <label style={e.label}>Tipo de evento</label>
+              <select value={nuevoEvento.tipo}
+                onChange={ev => setNuevoEvento({ ...nuevoEvento, tipo: ev.target.value })}
+                style={e.input}>
+                <option value="quince">Cumpleaños de 15 — un QR por invitado, con DNI</option>
+                <option value="egresados">Fiesta de egresados — entradas por familia (cena / baile)</option>
+              </select>
+              <p style={e.ayuda}>No se puede cambiar después de crear el evento.</p>
+            </div>
+            {(nuevoEvento.tipo === 'egresados' ? [
+              { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cena de egresados Colegio del Carmen' },
+              { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
+              { label: 'Capacidad (entradas)', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 400' },
+              { label: 'Colegio u organizador', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Colegio del Carmen — Promo 2026' },
+              { label: 'Teléfono de contacto', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
+            ] : [
               { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cumpleaños de Victoria' },
               { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
               { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 150' },
               { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Victoria García' },
               { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
-            ].map(({ label, key, type, placeholder }) => (
+            ]).map(({ label, key, type, placeholder }) => (
               <div key={key} style={e.campo}>
                 <label style={e.label}>{label}</label>
                 <input type={type} value={nuevoEvento[key]} placeholder={placeholder}
@@ -587,6 +648,18 @@ export default function Dashboard() {
                   style={e.input} required={key !== 'anfitrion_telefono'} />
               </div>
             ))}
+            {nuevoEvento.tipo === 'egresados' && (
+              <div style={e.campo}>
+                <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
+                <input type="datetime-local" value={nuevoEvento.inicio_baile}
+                  onChange={ev => setNuevoEvento({ ...nuevoEvento, inicio_baile: ev.target.value })}
+                  style={e.input} />
+                <p style={e.ayuda}>
+                  Antes de esta hora las entradas de solo baile se rechazan en la puerta. Las de cena
+                  incluyen el baile. Si el baile es pasada la medianoche, poné el día siguiente.
+                </p>
+              </div>
+            )}
             <div style={e.formFooter}>
               <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
               <button type="submit" style={e.btnPrimario} disabled={cargando}>
@@ -597,7 +670,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {vistaActual === 'invitados' && eventoSeleccionado && (
+      {vistaActual === 'invitados' && eventoSeleccionado?.tipo === 'egresados' && !purgado && (
+        <VistaEgresados evento={eventoSeleccionado} isMobile={isMobile} e={e}
+          mostrarMensaje={mostrarMensaje} formatearHora={formatearHora} />
+      )}
+
+      {vistaActual === 'invitados' && eventoSeleccionado && (eventoSeleccionado.tipo !== 'egresados' || purgado) && (
         <div>
           <div style={isMobile ? e.statsRowMobile : e.statsRow}>
             <div style={e.statCard}>
@@ -630,6 +708,12 @@ export default function Dashboard() {
                 {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
               </div>
               <div style={isMobile ? e.importarBotonesMobile : e.importarBotones}>
+                {invitados.some(i => !i.qr_enviado) && (
+                  <button onClick={reenviarPendientes} disabled={cargando}
+                    style={{ ...e.btnSecundario, color: '#b45309', borderColor: '#fcd34d', ...(isMobile ? { flex: 1 } : {}) }}>
+                    Reenviar pendientes
+                  </button>
+                )}
                 <button onClick={abrirNuevoInvitado}
                   style={isMobile ? { ...e.btnSecundario, flex: 1 } : e.btnSecundario} disabled={cargando}>
                   Agregar invitado

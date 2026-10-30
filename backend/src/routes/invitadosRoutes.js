@@ -3,7 +3,7 @@ const router = express.Router({ mergeParams: true })
 const multer = require('multer')
 const config = require('../config/env')
 const {
-  importarInvitados, crearInvitado, editarInvitado,
+  importarInvitados, crearInvitado, editarInvitado, reenviarPendientes,
   reenviarQR, listarInvitados, eliminarInvitado, deshacerIngreso
 } = require('../controllers/invitadosController')
 const { verificarToken, soloAdmin } = require('../middlewares/auth')
@@ -34,9 +34,11 @@ router.get('/', verificarToken, soloAdmin, listarInvitados)
 // Alta manual: manda un email, así que va con el límite de envíos.
 router.post('/', verificarToken, soloAdmin, limiteEmail, crearInvitado)
 router.put('/:invitadoId', verificarToken, soloAdmin, limiteEmail, editarInvitado)
+router.post('/reenviar-pendientes', verificarToken, soloAdmin, limiteEmail, reenviarPendientes)
 router.post('/:invitadoId/reenviar-qr', verificarToken, soloAdmin, limiteEmail, reenviarQR)
 // Solo admin: un guardia no debe poder liberar un QR ya usado.
 router.post('/:invitadoId/deshacer-ingreso', verificarToken, soloAdmin, deshacerIngreso)
 router.delete('/:invitadoId', verificarToken, soloAdmin, eliminarInvitado)
 
 module.exports = router
+module.exports.upload = upload

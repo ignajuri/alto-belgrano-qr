@@ -46,7 +46,11 @@ const ACCIONES = {
   QR_REENVIADO: 'qr_reenviado',
   QR_VALIDADO: 'qr_validado',
   QR_RECHAZADO: 'qr_rechazado',
-  INGRESO_DESHECHO: 'ingreso_deshecho'
+  INGRESO_DESHECHO: 'ingreso_deshecho',
+  GRUPOS_IMPORTADOS: 'grupos_importados',
+  GRUPO_EDITADO: 'grupo_editado',
+  GRUPO_ELIMINADO: 'grupo_eliminado',
+  PENDIENTES_REENVIADOS: 'pendientes_reenviados'
 }
 
 module.exports = { registrar, obtenerIp, ACCIONES }
