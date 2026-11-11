@@ -155,10 +155,18 @@ export default function Escaner() {
     }
   }
 
+  // Igual que en el panel: el aviso queda 2 minutos o hasta cerrarlo con la ✕.
+  const temporizadorMensaje = useRef(null)
   const mostrarMensaje = (texto) => {
+    clearTimeout(temporizadorMensaje.current)
     setMensaje(texto)
-    setTimeout(() => setMensaje(''), 3000)
+    temporizadorMensaje.current = setTimeout(() => setMensaje(''), 2 * 60 * 1000)
   }
+  const cerrarMensaje = () => {
+    clearTimeout(temporizadorMensaje.current)
+    setMensaje('')
+  }
+  useEffect(() => () => clearTimeout(temporizadorMensaje.current), [])
 
   const handleNavPerfil = () => {
     if (escaneando) detenerEscaner()
@@ -247,8 +255,10 @@ export default function Escaner() {
 
       <div style={es.cuerpo}>
         {mensaje && (
-          <div style={mensaje.includes('Error') || mensaje.includes('no') ? es.alertaError : es.alerta}>
-            {mensaje}
+          <div role={mensaje.includes('Error') ? 'alert' : 'status'}
+            style={{ ...(mensaje.includes('Error') || mensaje.includes('no') ? es.alertaError : es.alerta), ...es.alertaConCierre }}>
+            <span style={{ flex: 1 }}>{mensaje}</span>
+            <button type="button" onClick={cerrarMensaje} aria-label="Cerrar aviso" style={es.alertaCerrar}>✕</button>
           </div>
         )}
 
@@ -454,6 +464,8 @@ const es = {
   btnSalir: { padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.5)', borderRadius: '7px', cursor: 'pointer', fontSize: '13px' },
   cuerpo: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 16px', gap: '20px' },
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', width: '100%', maxWidth: '420px', textAlign: 'center', border: '1px solid #bbf7d0' },
+  alertaConCierre: { display: 'flex', alignItems: 'flex-start', gap: '10px', textAlign: 'left', boxSizing: 'border-box' },
+  alertaCerrar: { flexShrink: 0, background: 'none', border: 'none', color: 'inherit', fontSize: '16px', lineHeight: 1, padding: '2px 4px', cursor: 'pointer' },
   alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', width: '100%', maxWidth: '420px', textAlign: 'center', border: '1px solid #fecaca' },
   scanCard: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' },
   lector: { width: '100%' },
