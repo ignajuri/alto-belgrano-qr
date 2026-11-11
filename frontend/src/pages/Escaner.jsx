@@ -208,6 +208,11 @@ export default function Escaner() {
     }
   }
 
+  const irAlPanel = async () => {
+    if (escaneando) await detenerEscaner()
+    navigate('/dashboard')
+  }
+
   const cerrarSesion = async () => {
     if (escaneando) await detenerEscaner()
     try { await api.post('/auth/logout') } catch { /* ignorado a propósito */ }
@@ -230,6 +235,15 @@ export default function Escaner() {
           <button onClick={cerrarSesion} style={es.btnSalir}>Salir</button>
         </div>
       </div>
+
+      {/* Un admin puede usar el escáner con su cuenta: esta franja le recuerda
+          en qué vista está y lo devuelve al panel sin cerrar sesión. */}
+      {usuario.rol === 'admin' && (
+        <div style={es.franjaAdmin}>
+          <span>Estás en la vista de guardia</span>
+          <button onClick={irAlPanel} style={es.btnPanel}>← Volver al panel</button>
+        </div>
+      )}
 
       <div style={es.cuerpo}>
         {mensaje && (
@@ -435,6 +449,8 @@ const es = {
   headerSub: { color: 'rgba(255,255,255,0.5)', margin: '2px 0 0', fontSize: '11px' },
   headerDer: { display: 'flex', alignItems: 'center', gap: '10px' },
   btnPerfil: { padding: '7px 14px', backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)', borderRadius: '7px', cursor: 'pointer', fontSize: '13px' },
+  franjaAdmin: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 16px', backgroundColor: '#1e3a8a', color: 'rgba(255,255,255,0.85)', fontSize: '13px' },
+  btnPanel: { padding: '6px 12px', backgroundColor: '#3b82f6', border: 'none', color: 'white', borderRadius: '7px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap' },
   btnSalir: { padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.5)', borderRadius: '7px', cursor: 'pointer', fontSize: '13px' },
   cuerpo: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 16px', gap: '20px' },
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', width: '100%', maxWidth: '420px', textAlign: 'center', border: '1px solid #bbf7d0' },
