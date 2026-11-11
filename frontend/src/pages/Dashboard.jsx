@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api, { cerrarSesionLocal } from '../services/api'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -35,7 +35,9 @@ export default function Dashboard() {
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null)
   const [invitados, setInvitados] = useState([])
   const [cargando, setCargando] = useState(false)
-  const [mensaje, setMensaje] = useState('')
+  // { texto, detalle: [], esError } | null
+  const [mensaje, setMensaje] = useState(null)
+  const temporizadorMensaje = useRef(null)
   const [usuarioEditando, setUsuarioEditando] = useState(null)
   const [eventoEditando, setEventoEditando] = useState(null)
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -120,10 +122,27 @@ export default function Dashboard() {
     return () => clearInterval(intervalo)
   }, [vistaActual, eventoSeleccionado])
 
-  const mostrarMensaje = (texto) => {
-    setMensaje(texto)
-    setTimeout(() => setMensaje(''), 3000)
+  // Los avisos de éxito se cierran solos a los 3 s. Los de error quedan 2
+  // minutos (o hasta cerrarlos con la ✕) para que dé tiempo a leer, por
+  // ejemplo, la lista de filas con problemas de un Excel.
+  const DURACION_EXITO_MS = 3000
+  const DURACION_ERROR_MS = 2 * 60 * 1000
+
+  const cerrarMensaje = () => {
+    clearTimeout(temporizadorMensaje.current)
+    setMensaje(null)
   }
+
+  const mostrarMensaje = (texto, detalle = []) => {
+    const esError = !texto.startsWith('✓') && (texto.includes('Error') || texto.includes('no'))
+    // Un aviso nuevo reemplaza al anterior: se cancela el temporizador viejo
+    // para que no cierre el aviso nuevo antes de tiempo.
+    clearTimeout(temporizadorMensaje.current)
+    setMensaje({ texto, detalle, esError })
+    temporizadorMensaje.current = setTimeout(() => setMensaje(null), esError ? DURACION_ERROR_MS : DURACION_EXITO_MS)
+  }
+
+  useEffect(() => () => clearTimeout(temporizadorMensaje.current), [])
 
   const crearEvento = async (e) => {
     e.preventDefault()
@@ -296,8 +315,8 @@ export default function Dashboard() {
     } catch (err) {
       // El backend detalla qué filas del Excel están mal; conviene mostrarlo.
       const datos = err.response?.data
-      const detalle = Array.isArray(datos?.detalle) ? ` — ${datos.detalle.slice(0, 3).join('; ')}` : ''
-      mostrarMensaje('Error: ' + (datos?.error || 'no se pudo importar el archivo') + detalle)
+      mostrarMensaje('Error: ' + (datos?.error || 'no se pudo importar el archivo'),
+        Array.isArray(datos?.detalle) ? datos.detalle : [])
     } finally { setCargando(false); e.target.value = '' }
   }
 
@@ -436,8 +455,20 @@ export default function Dashboard() {
   const contenido = (
     <div style={isMobile ? e.contenidoMobile : e.contenido}>
       {mensaje && (
-        <div style={!mensaje.startsWith('✓') && (mensaje.includes('Error') || mensaje.includes('no')) ? e.alertaError : e.alerta}>
-          {mensaje}
+        <div role={mensaje.esError ? 'alert' : 'status'}
+          style={{ ...(mensaje.esError ? e.alertaError : e.alerta), ...e.alertaContenedor }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {mensaje.texto}
+            {mensaje.detalle.length > 0 && (
+              <ul style={e.alertaLista}>
+                {mensaje.detalle.map((linea, i) => <li key={i}>{linea}</li>)}
+              </ul>
+            )}
+          </div>
+          <button type="button" onClick={cerrarMensaje} aria-label="Cerrar aviso"
+            style={{ ...e.alertaCerrar, color: mensaje.esError ? '#dc2626' : '#15803d' }}>
+            ✕
+          </button>
         </div>
       )}
 
@@ -1127,6 +1158,9 @@ const e = {
   formContenedorMobile: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0' },
   alerta: { backgroundColor: '#f0fdf4', color: '#15803d', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #bbf7d0' },
   alertaError: { backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' },
+  alertaContenedor: { display: 'flex', alignItems: 'flex-start', gap: '12px' },
+  alertaLista: { margin: '8px 0 0', paddingLeft: '20px', lineHeight: '1.6' },
+  alertaCerrar: { flexShrink: 0, background: 'none', border: 'none', fontSize: '18px', lineHeight: 1, padding: '2px 4px', cursor: 'pointer' },
   card: { backgroundColor: 'white', borderRadius: '12px', marginBottom: '12px', display: 'flex', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' },
   cardAccent: { width: '4px', alignSelf: 'stretch', backgroundColor: '#3b82f6', flexShrink: 0 },
   cardInfo: { flex: 1, padding: '16px 20px' },

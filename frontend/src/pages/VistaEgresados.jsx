@@ -55,8 +55,7 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
 
   const error = (err, porDefecto) => {
     const datos = err.response?.data
-    const detalle = Array.isArray(datos?.detalle) ? ` — ${datos.detalle.slice(0, 3).join('; ')}` : ''
-    mostrarMensaje('Error: ' + (datos?.error || porDefecto) + detalle)
+    mostrarMensaje('Error: ' + (datos?.error || porDefecto), Array.isArray(datos?.detalle) ? datos.detalle : [])
   }
 
   // ── Importación en dos pasos ──────────────────────────────────────────────
