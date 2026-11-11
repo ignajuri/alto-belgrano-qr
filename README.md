@@ -17,8 +17,10 @@ Desarrollado como Práctica Profesional Supervisada de la Licenciatura en Sistem
 - Envío automático de la invitación con su QR por email, en segundo plano y espaciado para respetar los límites del proveedor.
 - Reenvío individual del QR.
 
-**Dos tipos de evento**
-- **Cumpleaños de 15:** un invitado por fila (`nombre`, `apellido`, `dni`, `email`) y un QR por correo.
+**Tipos de evento y forma de carga**
+- **Cumpleaños de 15:** carga individual, un invitado por fila (`nombre`, `apellido`, `dni`, `email`, `entrada`) y un QR por correo. DNI obligatorio.
+- **Casamiento:** al crearlo se elige carga individual (como el 15, con DNI opcional) o por familia (como egresados).
+- En todos los eventos cada entrada es **cena + baile** o **solo baile**; en la carga individual se indica en la columna opcional `entrada` (vacía = cena + baile).
 - **Fiesta de egresados:** una fila por familia (`familia`, `email`, `telefono`, `cena`, `baile`). Cada entrada tiene su propio QR y todas llegan juntas al correo de la familia, numeradas ("Entrada 3 de 5 · Cena + baile").
 - Las entradas de cena incluyen el baile; las de solo baile se rechazan antes de la hora de inicio del baile configurada en el evento.
 - El Excel de egresados se puede volver a subir actualizado: se muestra un resumen antes de confirmar y solo se crean y envían las entradas nuevas. Si una familia aparece con menos entradas, no se borra nada automáticamente.

@@ -1,13 +1,20 @@
 const supabase = require('../config/supabase')
-const { leerInvitados } = require('../services/excelService')
+const { leerInvitados, clavePersona } = require('../services/excelService')
 const {
   enviarInvitacion, enviarInvitacionesEnLote, enviarEntradasGrupo, enviarGruposEnLote
 } = require('../services/emailService')
 const { enviosPendientesDeGrupos } = require('./gruposController')
 const { registrar, ACCIONES } = require('../utils/auditoria')
 const {
-  esUuid, texto, normalizarEmail, esEmailValido, normalizarDni, esDniValido
+  esUuid, texto, normalizarEmail, esEmailValido, normalizarDni, esDniValido,
+  dniObligatorio, normalizarTipoEntrada
 } = require('../utils/validacion')
+
+// Datos del evento que hacen falta para validar invitados y mandar el correo.
+const CAMPOS_EVENTO = 'id, nombre_evento, fecha, limite_invitados, datos_purgados_en, tipo, modo_carga, inicio_baile'
+const CAMPOS_INVITADO = 'id, nombre, apellido, dni, email, qr_token, qr_enviado, ingresado, fecha_ingreso, tipo_entrada'
+
+const ERROR_ES_POR_FAMILIA = 'Este evento carga los invitados por familia: usá la carga por familias'
 
 // Postgres devuelve este código cuando se viola un índice único. Acá solo puede
 // ser el de (evento_id, dni) que crea la migración 001.
@@ -16,20 +23,23 @@ const COD_DUPLICADO = '23505'
 // Valida y normaliza los datos de un invitado cargado a mano. Aplica las mismas
 // reglas que el importador de Excel para que no haya dos criterios distintos
 // según por dónde entre el dato.
-const parsearInvitado = (body) => {
+// El DNI es obligatorio solo en los cumpleaños de 15.
+const parsearInvitado = (body, tipoEvento) => {
   const nombre = texto(body?.nombre, 120)
   const apellido = texto(body?.apellido, 120)
   const dni = normalizarDni(body?.dni)
   const email = normalizarEmail(body?.email)
+  const tipo_entrada = normalizarTipoEntrada(body?.tipo_entrada)
 
   if (!nombre) return { error: 'El nombre es obligatorio' }
   if (!apellido) return { error: 'El apellido es obligatorio' }
-  if (!dni) return { error: 'El DNI es obligatorio' }
-  if (!esDniValido(dni)) return { error: `El DNI "${dni}" no es válido: tiene que ser numérico, de 6 a 10 dígitos` }
+  if (!dni && dniObligatorio(tipoEvento)) return { error: 'El DNI es obligatorio' }
+  if (dni && !esDniValido(dni)) return { error: `El DNI "${dni}" no es válido: tiene que ser numérico, de 6 a 10 dígitos` }
   if (!email) return { error: 'El email es obligatorio' }
   if (!esEmailValido(email)) return { error: `El email "${email}" no tiene un formato válido` }
+  if (!tipo_entrada) return { error: 'El tipo de entrada es inválido' }
 
-  return { datos: { nombre, apellido, dni, email } }
+  return { datos: { nombre, apellido, dni: dni || null, email, tipo_entrada } }
 }
 
 const importarInvitados = async (req, res) => {
@@ -46,7 +56,7 @@ const importarInvitados = async (req, res) => {
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, limite_invitados, tipo')
+      .select(CAMPOS_EVENTO)
       .eq('id', evento_id)
       .maybeSingle()
 
@@ -54,11 +64,12 @@ const importarInvitados = async (req, res) => {
       return res.status(404).json({ error: 'Evento no encontrado' })
     }
 
-    if (evento.tipo === 'egresados') {
-      return res.status(400).json({ error: 'Este evento es de egresados: usá la carga por familias' })
+    if (evento.modo_carga === 'familia') {
+      return res.status(400).json({ error: ERROR_ES_POR_FAMILIA })
     }
 
-    const { invitados, errores, totalErrores, error: errorLectura } = await leerInvitados(req.file.buffer)
+    const { invitados, errores, totalErrores, error: errorLectura } =
+      await leerInvitados(req.file.buffer, { dniObligatorio: dniObligatorio(evento.tipo) })
 
     if (errorLectura) {
       return res.status(400).json({ error: errorLectura })
@@ -77,12 +88,14 @@ const importarInvitados = async (req, res) => {
 
     const { data: existentes } = await supabase
       .from('invitados')
-      .select('dni')
+      .select('dni, nombre, apellido, email')
       .eq('evento_id', evento_id)
 
-    const dnisExistentes = new Set((existentes || []).map(i => String(i.dni).trim()))
+    // Volver a subir el Excel no duplica: se omite a quien ya está cargado
+    // (por DNI, o por nombre + apellido + email si no tiene DNI).
+    const yaCargados = new Set((existentes || []).map(i => clavePersona({ ...i, dni: i.dni ? String(i.dni).trim() : null })))
     const nuevos = invitados
-      .filter(inv => !dnisExistentes.has(inv.dni))
+      .filter(inv => !yaCargados.has(clavePersona(inv)))
       .map(inv => ({ ...inv, evento_id }))
 
     if (nuevos.length === 0) {
@@ -91,18 +104,19 @@ const importarInvitados = async (req, res) => {
 
     // El límite de invitados del evento se respeta de verdad, no es solo
     // informativo: evita cargas accidentales que excedan la capacidad del salón.
-    const totalResultante = dnisExistentes.size + nuevos.length
+    const cantidadActual = (existentes || []).length
+    const totalResultante = cantidadActual + nuevos.length
     if (totalResultante > evento.limite_invitados) {
       return res.status(400).json({
         error: `La importación superaría el límite del evento (${evento.limite_invitados}). ` +
-               `Ya hay ${dnisExistentes.size} invitados y estás agregando ${nuevos.length}.`
+               `Ya hay ${cantidadActual} invitados y estás agregando ${nuevos.length}.`
       })
     }
 
     const { data: creados, error: errorInsert } = await supabase
       .from('invitados')
       .insert(nuevos)
-      .select('id, nombre, email, qr_token')
+      .select('id, nombre, email, qr_token, tipo_entrada')
 
     if (errorInsert) throw errorInsert
 
@@ -143,13 +157,10 @@ const crearInvitado = async (req, res) => {
     return res.status(400).json({ error: 'Identificador de evento inválido' })
   }
 
-  const { datos, error: errorValidacion } = parsearInvitado(req.body)
-  if (errorValidacion) return res.status(400).json({ error: errorValidacion })
-
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, limite_invitados, datos_purgados_en, tipo')
+      .select(CAMPOS_EVENTO)
       .eq('id', evento_id)
       .maybeSingle()
 
@@ -157,9 +168,12 @@ const crearInvitado = async (req, res) => {
       return res.status(404).json({ error: 'Evento no encontrado' })
     }
 
-    if (evento.tipo === 'egresados') {
-      return res.status(400).json({ error: 'Este evento es de egresados: las entradas se cargan por familia' })
+    if (evento.modo_carga === 'familia') {
+      return res.status(400).json({ error: ERROR_ES_POR_FAMILIA })
     }
+
+    const { datos, error: errorValidacion } = parsearInvitado(req.body, evento.tipo)
+    if (errorValidacion) return res.status(400).json({ error: errorValidacion })
 
     // Un evento ya purgado no admite datos personales nuevos: sus invitados se
     // borraron por política de retención y volver a cargarlos contradice eso.
@@ -183,7 +197,7 @@ const crearInvitado = async (req, res) => {
     const { data: creado, error } = await supabase
       .from('invitados')
       .insert([{ ...datos, evento_id }])
-      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado, ingresado, fecha_ingreso')
+      .select(CAMPOS_INVITADO)
       .single()
 
     if (error) {
@@ -230,13 +244,25 @@ const editarInvitado = async (req, res) => {
     return res.status(400).json({ error: 'Identificador inválido' })
   }
 
-  const { datos, error: errorValidacion } = parsearInvitado(req.body)
-  if (errorValidacion) return res.status(400).json({ error: errorValidacion })
-
   try {
+    const { data: evento } = await supabase
+      .from('eventos')
+      .select(CAMPOS_EVENTO)
+      .eq('id', evento_id)
+      .maybeSingle()
+
+    if (!evento) {
+      return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    // Cambiar el tipo de entrada no requiere reenviar el QR: el escáner lee
+    // el tipo de la base, así que el mismo código pasa a valer según el nuevo.
+    const { datos, error: errorValidacion } = parsearInvitado(req.body, evento.tipo)
+    if (errorValidacion) return res.status(400).json({ error: errorValidacion })
+
     const { data: actual } = await supabase
       .from('invitados')
-      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado, grupo_id')
+      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado, grupo_id, tipo_entrada')
       .eq('id', invitadoId)
       .eq('evento_id', evento_id)
       .maybeSingle()
@@ -254,7 +280,7 @@ const editarInvitado = async (req, res) => {
       .update(datos)
       .eq('id', invitadoId)
       .eq('evento_id', evento_id)
-      .select('id, nombre, apellido, dni, email, qr_token, qr_enviado, ingresado, fecha_ingreso')
+      .select(CAMPOS_INVITADO)
       .single()
 
     if (error) {
@@ -281,19 +307,11 @@ const editarInvitado = async (req, res) => {
 
     if (cambioEmail && actual.qr_enviado) {
       try {
-        const { data: evento } = await supabase
-          .from('eventos')
-          .select('id, nombre_evento, fecha')
-          .eq('id', evento_id)
-          .maybeSingle()
-
-        if (evento) {
-          await enviarInvitacion(actualizado, evento)
-          reenviado = true
-          await registrar(req, ACCIONES.QR_REENVIADO, {
-            entidad: 'invitados', entidadId: invitadoId, detalle: { motivo: 'cambio_de_email' }
-          })
-        }
+        await enviarInvitacion(actualizado, evento)
+        reenviado = true
+        await registrar(req, ACCIONES.QR_REENVIADO, {
+          entidad: 'invitados', entidadId: invitadoId, detalle: { motivo: 'cambio_de_email' }
+        })
       } catch (errorEmail) {
         console.error(`[email] falló el reenvío al invitado ${invitadoId}: ${errorEmail.message}`)
       }
@@ -338,7 +356,7 @@ const reenviarQR = async (req, res) => {
 
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, inicio_baile')
+      .select('id, nombre_evento, fecha, inicio_baile, tipo')
       .eq('id', evento_id)
       .maybeSingle()
 
@@ -514,7 +532,7 @@ const reenviarPendientes = async (req, res) => {
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, tipo, inicio_baile')
+      .select('id, nombre_evento, fecha, tipo, modo_carga, inicio_baile')
       .eq('id', evento_id)
       .maybeSingle()
 
@@ -524,7 +542,7 @@ const reenviarPendientes = async (req, res) => {
 
     let cantidad = 0
 
-    if (evento.tipo === 'egresados') {
+    if (evento.modo_carga === 'familia') {
       const envios = await enviosPendientesDeGrupos(evento)
       cantidad = envios.length
       if (cantidad > 0) {
@@ -535,7 +553,7 @@ const reenviarPendientes = async (req, res) => {
     } else {
       const { data: pendientes, error } = await supabase
         .from('invitados')
-        .select('id, nombre, email, qr_token')
+        .select('id, nombre, email, qr_token, tipo_entrada')
         .eq('evento_id', evento_id)
         .eq('qr_enviado', false)
       if (error) throw error

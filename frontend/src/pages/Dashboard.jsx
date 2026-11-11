@@ -24,8 +24,44 @@ const isoALocalAR = (iso) => {
 }
 
 const EVENTO_VACIO = {
-  tipo: 'quince', nombre_evento: '', fecha: '', limite_invitados: '',
+  tipo: 'quince', modo_carga: 'individual', nombre_evento: '', fecha: '', limite_invitados: '',
   anfitrion_nombre: '', anfitrion_telefono: '', inicio_baile: ''
+}
+
+const NOMBRE_TIPO = { quince: 'Cumpleaños de 15', casamiento: 'Casamiento', egresados: 'Egresados' }
+
+// Un evento carga sus invitados de a uno (15, casamiento individual) o por
+// familia (egresados, casamiento por familia). Los eventos anteriores a la
+// columna modo_carga se deducen del tipo.
+const esPorFamilia = (ev) => (ev?.modo_carga || (ev?.tipo === 'egresados' ? 'familia' : 'individual')) === 'familia'
+
+const textoEntrada = (tipo) => (tipo === 'baile' ? 'Solo baile' : 'Cena + baile')
+
+const INVITADO_VACIO = { nombre: '', apellido: '', dni: '', email: '', tipo_entrada: 'cena' }
+
+// Campos del formulario de alta según el tipo de evento.
+const CAMPOS_EVENTO = {
+  quince: [
+    { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cumpleaños de Victoria' },
+    { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
+    { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 150' },
+    { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Victoria García' },
+    { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
+  ],
+  casamiento: [
+    { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Casamiento de Laura y Martín' },
+    { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
+    { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 200' },
+    { label: 'Novios', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Laura Gómez y Martín Ruiz' },
+    { label: 'Teléfono de contacto', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
+  ],
+  egresados: [
+    { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cena de egresados Colegio del Carmen' },
+    { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
+    { label: 'Capacidad (entradas)', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 400' },
+    { label: 'Colegio u organizador', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Colegio del Carmen — Promo 2026' },
+    { label: 'Teléfono de contacto', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
+  ]
 }
 
 export default function Dashboard() {
@@ -45,7 +81,7 @@ export default function Dashboard() {
   const [deshaciendo, setDeshaciendo] = useState(null)
   // null = modal cerrado | 'nuevo' = alta | objeto invitado = edición
   const [invitadoEditando, setInvitadoEditando] = useState(null)
-  const [formInvitado, setFormInvitado] = useState({ nombre: '', apellido: '', dni: '', email: '' })
+  const [formInvitado, setFormInvitado] = useState(INVITADO_VACIO)
   const navigate = useNavigate()
   const isMobile = useIsMobile()
 
@@ -104,7 +140,7 @@ export default function Dashboard() {
   // consultar al backend, que es quien tiene la service key.
   useEffect(() => {
     // Los eventos de egresados refrescan su propia vista por familias.
-    if (vistaActual !== 'invitados' || !eventoSeleccionado || eventoSeleccionado.tipo === 'egresados') return
+    if (vistaActual !== 'invitados' || !eventoSeleccionado || esPorFamilia(eventoSeleccionado)) return
 
     const eventoId = eventoSeleccionado.id
     const intervalo = setInterval(async () => {
@@ -151,7 +187,7 @@ export default function Dashboard() {
       await api.post('/eventos', {
         ...nuevoEvento,
         limite_invitados: parseInt(nuevoEvento.limite_invitados),
-        inicio_baile: nuevoEvento.tipo === 'egresados' ? nuevoEvento.inicio_baile : ''
+        modo_carga: nuevoEvento.tipo === 'casamiento' ? nuevoEvento.modo_carga : undefined
       })
       mostrarMensaje('Evento creado correctamente')
       setNuevoEvento(EVENTO_VACIO)
@@ -339,12 +375,15 @@ export default function Dashboard() {
   }
 
   const abrirNuevoInvitado = () => {
-    setFormInvitado({ nombre: '', apellido: '', dni: '', email: '' })
+    setFormInvitado(INVITADO_VACIO)
     setInvitadoEditando('nuevo')
   }
 
   const abrirEdicionInvitado = (inv) => {
-    setFormInvitado({ nombre: inv.nombre, apellido: inv.apellido, dni: inv.dni, email: inv.email })
+    setFormInvitado({
+      nombre: inv.nombre, apellido: inv.apellido, dni: inv.dni || '', email: inv.email,
+      tipo_entrada: inv.tipo_entrada || 'cena'
+    })
     setInvitadoEditando(inv)
   }
 
@@ -446,6 +485,8 @@ export default function Dashboard() {
   // Los eventos cuyos datos personales ya se purgaron muestran agregados en
   // vez de la lista nominal, que dejó de existir.
   const purgado = Boolean(eventoSeleccionado?.datos_purgados_en)
+  // DNI obligatorio solo en los cumpleaños de 15.
+  const dniOpcional = eventoSeleccionado?.tipo !== 'quince'
 
   // Solo avisamos cuando ya escribió algo en la confirmación: si no, el error
   // aparecería apenas empieza a tipear el primer campo.
@@ -531,17 +572,28 @@ export default function Dashboard() {
                 {[
                   { label: 'Nombre', key: 'nombre', type: 'text', placeholder: 'Ej: Sofía' },
                   { label: 'Apellido', key: 'apellido', type: 'text', placeholder: 'Ej: Gutiérrez' },
-                  { label: 'DNI', key: 'dni', type: 'text', placeholder: 'Ej: 38452019' },
+                  { label: 'DNI', key: 'dni', type: 'text', placeholder: 'Ej: 38452019', opcional: dniOpcional },
                   { label: 'Email', key: 'email', type: 'email', placeholder: 'sofia@ejemplo.com' },
-                ].map(({ label, key, type, placeholder }) => (
+                ].map(({ label, key, type, placeholder, opcional }) => (
                   <div key={key} style={e.campo}>
-                    <label style={e.label}>{label}</label>
+                    <label style={e.label}>{label} {opcional && <span style={e.opcional}>(opcional)</span>}</label>
                     <input type={type} value={formInvitado[key]} placeholder={placeholder}
                       onChange={ev => setFormInvitado({ ...formInvitado, [key]: ev.target.value })}
-                      style={e.input} required />
+                      style={e.input} required={!opcional} />
                     {key === 'dni' && <p style={e.ayuda}>Sin puntos ni espacios.</p>}
                   </div>
                 ))}
+                <div style={e.campo}>
+                  <label style={e.label}>Entrada</label>
+                  <select value={formInvitado.tipo_entrada} style={e.input}
+                    onChange={ev => setFormInvitado({ ...formInvitado, tipo_entrada: ev.target.value })}>
+                    <option value="cena">Cena + baile</option>
+                    <option value="baile">Solo baile</option>
+                  </select>
+                  {invitadoEditando !== 'nuevo' && (
+                    <p style={e.ayuda}>Si cambiás el tipo, no hace falta reenviar el QR: el mismo código pasa a valer según el tipo nuevo.</p>
+                  )}
+                </div>
                 <p style={e.ayuda}>
                   {invitadoEditando === 'nuevo'
                     ? 'Al guardar se le envía el QR por email automáticamente.'
@@ -587,15 +639,13 @@ export default function Dashboard() {
                       style={e.input} required={!opcional} />
                   </div>
                 ))}
-                {eventoEditando.tipo === 'egresados' && (
-                  <div style={e.campo}>
-                    <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
-                    <input type="datetime-local" value={formEdicionEvento.inicio_baile}
-                      onChange={ev => setFormEdicionEvento({ ...formEdicionEvento, inicio_baile: ev.target.value })}
-                      style={e.input} />
-                    <p style={e.ayuda}>Antes de esta hora, las entradas de solo baile se rechazan en la puerta.</p>
-                  </div>
-                )}
+                <div style={e.campo}>
+                  <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
+                  <input type="datetime-local" value={formEdicionEvento.inicio_baile}
+                    onChange={ev => setFormEdicionEvento({ ...formEdicionEvento, inicio_baile: ev.target.value })}
+                    style={e.input} />
+                  <p style={e.ayuda}>Antes de esta hora, las entradas de solo baile se rechazan en la puerta.</p>
+                </div>
               </div>
               <div style={e.modalBotones}>
                 <button type="button" onClick={() => setEventoEditando(null)} style={e.btnSecundario}>Cancelar</button>
@@ -623,8 +673,9 @@ export default function Dashboard() {
                 <div style={e.cardInfo}>
                   <h3 style={e.cardTitulo}>
                     {ev.nombre_evento}{' '}
-                    <span style={ev.tipo === 'egresados' ? e.badgeGuardia : e.badgeAdmin}>
-                      {ev.tipo === 'egresados' ? 'Egresados' : 'Cumpleaños de 15'}
+                    <span style={ev.tipo === 'egresados' ? e.badgeGuardia : ev.tipo === 'casamiento' ? e.badgeVerde : e.badgeAdmin}>
+                      {NOMBRE_TIPO[ev.tipo] || 'Cumpleaños de 15'}
+                      {ev.tipo === 'casamiento' && (esPorFamilia(ev) ? ' · por familia' : ' · individual')}
                     </span>
                   </h3>
                   <div style={isMobile ? e.cardMetaMobile : e.cardMeta}>
@@ -635,7 +686,7 @@ export default function Dashboard() {
                 </div>
                 <div style={isMobile ? e.cardAccionesMobile : e.cardAcciones}>
                   <button onClick={() => verInvitados(ev)} style={e.btnPrimario}>
-                    {ev.tipo === 'egresados' ? 'Ver entradas' : 'Ver invitados'}
+                    {esPorFamilia(ev) ? 'Ver entradas' : 'Ver invitados'}
                   </button>
                   <button onClick={() => abrirEdicionEvento(ev)} style={e.btnSecundario}>Editar</button>
                   <button onClick={() => eliminarEvento(ev.id)} style={e.btnDanger}>Eliminar</button>
@@ -655,23 +706,23 @@ export default function Dashboard() {
                 onChange={ev => setNuevoEvento({ ...nuevoEvento, tipo: ev.target.value })}
                 style={e.input}>
                 <option value="quince">Cumpleaños de 15 — un QR por invitado, con DNI</option>
-                <option value="egresados">Fiesta de egresados — entradas por familia (cena / baile)</option>
+                <option value="casamiento">Casamiento — individual o por familia, DNI opcional</option>
+                <option value="egresados">Fiesta de egresados — entradas por familia</option>
               </select>
               <p style={e.ayuda}>No se puede cambiar después de crear el evento.</p>
             </div>
-            {(nuevoEvento.tipo === 'egresados' ? [
-              { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cena de egresados Colegio del Carmen' },
-              { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
-              { label: 'Capacidad (entradas)', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 400' },
-              { label: 'Colegio u organizador', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Colegio del Carmen — Promo 2026' },
-              { label: 'Teléfono de contacto', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
-            ] : [
-              { label: 'Nombre del evento', key: 'nombre_evento', type: 'text', placeholder: 'Ej: Cumpleaños de Victoria' },
-              { label: 'Fecha', key: 'fecha', type: 'date', placeholder: '' },
-              { label: 'Límite de invitados', key: 'limite_invitados', type: 'number', placeholder: 'Ej: 150' },
-              { label: 'Nombre del anfitrión', key: 'anfitrion_nombre', type: 'text', placeholder: 'Ej: Victoria García' },
-              { label: 'Teléfono del anfitrión', key: 'anfitrion_telefono', type: 'text', placeholder: 'Opcional' },
-            ]).map(({ label, key, type, placeholder }) => (
+            {nuevoEvento.tipo === 'casamiento' && (
+              <div style={e.campo}>
+                <label style={e.label}>¿Cómo se cargan los invitados?</label>
+                <select value={nuevoEvento.modo_carga} style={e.input}
+                  onChange={ev => setNuevoEvento({ ...nuevoEvento, modo_carga: ev.target.value })}>
+                  <option value="individual">Individual — una persona por fila, cada uno recibe su QR</option>
+                  <option value="familia">Por familia — N invitaciones a un solo correo por familia</option>
+                </select>
+                <p style={e.ayuda}>Tampoco se puede cambiar después de crear el evento.</p>
+              </div>
+            )}
+            {CAMPOS_EVENTO[nuevoEvento.tipo].map(({ label, key, type, placeholder }) => (
               <div key={key} style={e.campo}>
                 <label style={e.label}>{label}</label>
                 <input type={type} value={nuevoEvento[key]} placeholder={placeholder}
@@ -679,18 +730,16 @@ export default function Dashboard() {
                   style={e.input} required={key !== 'anfitrion_telefono'} />
               </div>
             ))}
-            {nuevoEvento.tipo === 'egresados' && (
-              <div style={e.campo}>
-                <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
-                <input type="datetime-local" value={nuevoEvento.inicio_baile}
-                  onChange={ev => setNuevoEvento({ ...nuevoEvento, inicio_baile: ev.target.value })}
-                  style={e.input} />
-                <p style={e.ayuda}>
-                  Antes de esta hora las entradas de solo baile se rechazan en la puerta. Las de cena
-                  incluyen el baile. Si el baile es pasada la medianoche, poné el día siguiente.
-                </p>
-              </div>
-            )}
+            <div style={e.campo}>
+              <label style={e.label}>Inicio del baile <span style={e.opcional}>(opcional)</span></label>
+              <input type="datetime-local" value={nuevoEvento.inicio_baile}
+                onChange={ev => setNuevoEvento({ ...nuevoEvento, inicio_baile: ev.target.value })}
+                style={e.input} />
+              <p style={e.ayuda}>
+                Antes de esta hora las entradas de solo baile se rechazan en la puerta. Las de cena
+                incluyen el baile. Si el baile es pasada la medianoche, poné el día siguiente.
+              </p>
+            </div>
             <div style={e.formFooter}>
               <button type="button" onClick={() => setVistaActual('eventos')} style={e.btnSecundario}>Cancelar</button>
               <button type="submit" style={e.btnPrimario} disabled={cargando}>
@@ -701,12 +750,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {vistaActual === 'invitados' && eventoSeleccionado?.tipo === 'egresados' && !purgado && (
+      {vistaActual === 'invitados' && eventoSeleccionado && esPorFamilia(eventoSeleccionado) && !purgado && (
         <VistaEgresados evento={eventoSeleccionado} isMobile={isMobile} e={e}
           mostrarMensaje={mostrarMensaje} formatearHora={formatearHora} />
       )}
 
-      {vistaActual === 'invitados' && eventoSeleccionado && (eventoSeleccionado.tipo !== 'egresados' || purgado) && (
+      {vistaActual === 'invitados' && eventoSeleccionado && (!esPorFamilia(eventoSeleccionado) || purgado) && (
         <div>
           <div style={isMobile ? e.statsRowMobile : e.statsRow}>
             <div style={e.statCard}>
@@ -729,6 +778,13 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {!purgado && invitados.length > 0 && (
+            <p style={{ ...e.ayuda, margin: '-8px 0 16px' }}>
+              {invitados.filter(i => i.tipo_entrada !== 'baile').length} cena + baile · {invitados.filter(i => i.tipo_entrada === 'baile').length} solo baile
+              {eventoSeleccionado.inicio_baile && ` · baile desde las ${new Date(eventoSeleccionado.inicio_baile).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' })}`}
+            </p>
+          )}
+
           {/* Un evento purgado ya no admite importar: sus datos personales se
               borraron por política de retención y volver a cargarlos no tiene
               sentido ni sería lícito. */}
@@ -736,7 +792,12 @@ export default function Dashboard() {
             <div style={isMobile ? e.importarBoxMobile : e.importarBox}>
               <div>
                 <p style={e.importarTitulo}>Importar lista de invitados</p>
-                {!isMobile && <p style={e.importarDesc}>Subí un archivo Excel (.xlsx) con columnas: nombre, apellido, dni, email</p>}
+                {!isMobile && (
+                  <p style={e.importarDesc}>
+                    Excel (.xlsx) con columnas: nombre, apellido, dni{dniOpcional ? ' (opcional)' : ''}, email y
+                    entrada (opcional: "cena" o "baile"; vacía = cena + baile).
+                  </p>
+                )}
               </div>
               <div style={isMobile ? e.importarBotonesMobile : e.importarBotones}>
                 {invitados.some(i => !i.qr_enviado) && (
@@ -745,6 +806,10 @@ export default function Dashboard() {
                     Reenviar pendientes
                   </button>
                 )}
+                <a href="/plantilla-invitados.xlsx" download
+                  style={{ ...e.btnSecundario, textDecoration: 'none', display: 'inline-block', textAlign: 'center', ...(isMobile ? { flex: 1 } : {}) }}>
+                  Plantilla
+                </a>
                 <button onClick={abrirNuevoInvitado}
                   style={isMobile ? { ...e.btnSecundario, flex: 1 } : e.btnSecundario} disabled={cargando}>
                   Agregar invitado
@@ -785,10 +850,11 @@ export default function Dashboard() {
               <div key={inv.id} style={{ ...e.cardMobile, flexDirection: 'column', alignItems: 'stretch' }}>
                 <div style={{ marginBottom: '10px' }}>
                   <p style={{ margin: 0, fontWeight: '600', fontSize: '15px', color: '#0f172a' }}>{inv.nombre} {inv.apellido}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>
+                  {inv.dni && <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>DNI: {inv.dni}</p>}
                   <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b', wordBreak: 'break-all' }}>{inv.email}</p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <span style={inv.tipo_entrada === 'baile' ? e.badgeGuardia : e.badgeVerde}>{textoEntrada(inv.tipo_entrada)}</span>
                   <span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span>
                   {inv.fecha_ingreso && <span style={e.badgeGris}>{formatearHora(inv.fecha_ingreso)}</span>}
                   {inv.qr_enviado && <span style={e.badgeVerde}>QR enviado</span>}
@@ -812,7 +878,7 @@ export default function Dashboard() {
               <table style={e.tabla}>
                 <thead>
                   <tr>
-                    {['Nombre', 'Apellido', 'DNI', 'Email', 'QR', 'Estado', 'Ingreso', ''].map(col => (
+                    {['Nombre', 'Apellido', 'DNI', 'Email', 'Entrada', 'QR', 'Estado', 'Ingreso', ''].map(col => (
                       <th key={col} style={e.th}>{col}</th>
                     ))}
                   </tr>
@@ -822,8 +888,11 @@ export default function Dashboard() {
                     <tr key={inv.id} style={inv.ingresado ? e.filaIngresado : {}}>
                       <td style={e.td}>{inv.nombre}</td>
                       <td style={e.td}>{inv.apellido}</td>
-                      <td style={e.td}>{inv.dni}</td>
+                      <td style={e.td}>{inv.dni || '—'}</td>
                       <td style={e.td}>{inv.email}</td>
+                      <td style={e.td}>
+                        <span style={{ ...(inv.tipo_entrada === 'baile' ? e.badgeGuardia : e.badgeVerde), whiteSpace: 'nowrap' }}>{textoEntrada(inv.tipo_entrada)}</span>
+                      </td>
                       <td style={e.td}>{inv.qr_enviado ? <span style={e.badgeVerde}>Enviado</span> : <span style={e.badgeGris}>Pendiente</span>}</td>
                       <td style={e.td}><span style={inv.ingresado ? e.badgeVerde : e.badgeGris}>{inv.ingresado ? 'Ingresó' : 'Pendiente'}</span></td>
                       <td style={e.td}>{inv.fecha_ingreso ? formatearHora(inv.fecha_ingreso) : '—'}</td>

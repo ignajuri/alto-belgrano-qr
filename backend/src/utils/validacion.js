@@ -51,13 +51,35 @@ const enteroNoNegativo = (valor, max = 1000) => {
   return n > max ? null : n
 }
 
-const TIPOS_EVENTO = ['quince', 'egresados']
+const TIPOS_EVENTO = ['quince', 'casamiento', 'egresados']
 const TIPOS_ENTRADA = ['cena', 'baile']
+const MODOS_CARGA = ['individual', 'familia']
+
+// Forma de carga según el tipo de evento. Los 15 son siempre individuales y
+// los egresados siempre por familia; el casamiento se elige al crearlo.
+const MODO_CARGA_FIJO = { quince: 'individual', egresados: 'familia' }
+
+// En los cumpleaños de 15 el DNI es obligatorio; en el resto, opcional.
+const dniObligatorio = (tipoEvento) => tipoEvento === 'quince'
+
+// Acepta lo que alguien escribiría a mano en el Excel o el formulario.
+// Vacío = cena + baile (la entrada completa), que es lo habitual.
+const normalizarTipoEntrada = (valor) => {
+  const s = String(valor ?? '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ')
+  if (['', 'cena', 'cena + baile', 'cena+baile', 'cena y baile', 'completa', 'completo'].includes(s)) return 'cena'
+  if (['baile', 'solo baile', 'post cena', 'postcena', 'post-cena'].includes(s)) return 'baile'
+  return null
+}
 
 module.exports = {
   enteroNoNegativo,
   TIPOS_EVENTO,
   TIPOS_ENTRADA,
+  MODOS_CARGA,
+  MODO_CARGA_FIJO,
+  dniObligatorio,
+  normalizarTipoEntrada,
   esUuid,
   esEmailValido,
   normalizarEmail,

@@ -1,7 +1,9 @@
 const supabase = require('../config/supabase')
 const { registrar, ACCIONES } = require('../utils/auditoria')
 const { calcularVentana } = require('../utils/ventanaQr')
-const { esUuid, texto, esFechaValida, enteroPositivo, TIPOS_EVENTO } = require('../utils/validacion')
+const {
+  esUuid, texto, esFechaValida, enteroPositivo, TIPOS_EVENTO, MODOS_CARGA, MODO_CARGA_FIJO
+} = require('../utils/validacion')
 
 const FECHA_HORA_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
 
@@ -46,6 +48,14 @@ const parsearEvento = (body) => {
     return { error: 'El tipo de evento es inválido' }
   }
 
+  // Los 15 y los egresados tienen forma de carga fija; el casamiento la elige.
+  const modo_carga = MODO_CARGA_FIJO[tipo] || body?.modo_carga
+  if (!MODOS_CARGA.includes(modo_carga)) {
+    return { error: 'Elegí si los invitados se cargan de forma individual o por familia' }
+  }
+
+  // Cualquier evento puede tener entradas de solo baile, así que el horario
+  // de inicio del baile aplica a todos los tipos.
   const baile = parsearInicioBaile(body?.inicio_baile, fecha)
   if (baile.error) return { error: baile.error }
 
@@ -54,10 +64,11 @@ const parsearEvento = (body) => {
       nombre_evento,
       fecha,
       tipo,
+      modo_carga,
       limite_invitados,
       anfitrion_nombre,
       anfitrion_telefono: anfitrion_telefono || null,
-      inicio_baile: tipo === 'egresados' ? baile.valor : null
+      inicio_baile: baile.valor
     }
   }
 }
@@ -91,16 +102,17 @@ const editarEvento = async (req, res) => {
   if (!esUuid(id)) return res.status(400).json({ error: 'Identificador inválido' })
 
   try {
-    // El tipo no se cambia después de crear el evento: un cumpleaños con
-    // invitados por DNI no se puede convertir en una fiesta por familias.
+    // El tipo y la forma de carga no se cambian después de crear el evento:
+    // invitados cargados uno por uno no se pueden convertir en familias.
     const { data: actual } = await supabase
       .from('eventos')
-      .select('id, tipo')
+      .select('id, tipo, modo_carga')
       .eq('id', id)
       .maybeSingle()
     if (!actual) return res.status(404).json({ error: 'Evento no encontrado' })
 
-    const { datos, error: errorValidacion } = parsearEvento({ ...req.body, tipo: actual.tipo })
+    const { datos, error: errorValidacion } =
+      parsearEvento({ ...req.body, tipo: actual.tipo, modo_carga: actual.modo_carga })
     if (errorValidacion) return res.status(400).json({ error: errorValidacion })
 
     const { data, error } = await supabase
@@ -168,7 +180,7 @@ const listarEventosActivos = async (req, res) => {
 
     const { data, error } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, tipo')
+      .select('id, nombre_evento, fecha, tipo, modo_carga')
       .gte('fecha', desde)
       .lte('fecha', hasta)
       .order('fecha', { ascending: true })
@@ -204,7 +216,7 @@ const listaControl = async (req, res) => {
   try {
     const { data: evento } = await supabase
       .from('eventos')
-      .select('id, nombre_evento, fecha, tipo, inicio_baile')
+      .select('id, nombre_evento, fecha, tipo, modo_carga, inicio_baile')
       .eq('id', id)
       .maybeSingle()
 
@@ -231,13 +243,19 @@ const listaControl = async (req, res) => {
     const total = filas.length
     const ingresados = filas.filter(f => f.ingresado).length
     const base = {
-      evento: { id: evento.id, nombre_evento: evento.nombre_evento, fecha: evento.fecha, tipo: evento.tipo, inicio_baile: evento.inicio_baile },
+      evento: {
+        id: evento.id, nombre_evento: evento.nombre_evento, fecha: evento.fecha,
+        tipo: evento.tipo, modo_carga: evento.modo_carga, inicio_baile: evento.inicio_baile
+      },
       resumen: { total, ingresados }
     }
 
-    if (evento.tipo !== 'egresados') {
+    if (evento.modo_carga !== 'familia') {
       const invitados = filas
-        .map(f => ({ id: f.id, nombre: f.nombre, apellido: f.apellido, ingresado: f.ingresado, fecha_ingreso: f.fecha_ingreso }))
+        .map(f => ({
+          id: f.id, nombre: f.nombre, apellido: f.apellido, tipo_entrada: f.tipo_entrada,
+          ingresado: f.ingresado, fecha_ingreso: f.fecha_ingreso
+        }))
         .sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`, 'es'))
       return res.json({ ...base, invitados })
     }

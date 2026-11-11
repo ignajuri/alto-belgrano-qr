@@ -34,7 +34,11 @@ const generarHtmlEmail = (invitado, evento) => `
     <h2 style="color: #1a3a6b;">¡Hola ${escaparHtml(invitado.nombre)}!</h2>
     <p>Estás invitado/a a <strong>${escaparHtml(evento.nombre_evento)}</strong>, en el Salón Alto Belgrano.</p>
     <p><strong>Fecha:</strong> ${escaparHtml(formatearFecha(evento.fecha))}<br/>
-       <strong>Lugar:</strong> Salón Alto Belgrano, Mendoza</p>
+       <strong>Lugar:</strong> Salón Alto Belgrano, Mendoza<br/>
+       <strong>Entrada:</strong>
+       <span style="color: ${invitado.tipo_entrada === 'baile' ? '#7c3aed' : '#15803d'}; font-weight: bold;">
+         ${escaparHtml(etiquetaTipo(invitado.tipo_entrada || 'cena', evento))}
+       </span></p>
     <p>Presentá este código QR en la entrada. Podés mostrarlo desde el celular
        o llevarlo impreso, como te resulte más cómodo.</p>
     <div style="text-align: center; margin: 30px 0;">
@@ -61,6 +65,7 @@ Estás invitado/a a ${evento.nombre_evento}, en el Salón Alto Belgrano.
 
 Fecha: ${formatearFecha(evento.fecha)}
 Lugar: Salón Alto Belgrano, Mendoza
+Entrada: ${etiquetaTipo(invitado.tipo_entrada || 'cena', evento)}
 
 Presentá en la entrada el código QR que va adjunto a este correo
 (archivo qr-invitacion.png). Podés mostrarlo desde el celular o
@@ -265,10 +270,19 @@ const encabezadoGrupo = ({ modo, cantidad, total }) => {
   return `Acá ${plural(total, 'está tu entrada', `están tus ${total} entradas`)}.`
 }
 
+// En egresados las entradas se compran; en un casamiento por familia son
+// invitaciones. Cambia el asunto y el pie del correo, no el resto.
+const esCompra = (evento) => evento.tipo === 'egresados'
+
+const piePorQue = (evento) => esCompra(evento)
+  ? 'Recibiste este correo porque compraste entradas para este evento.'
+  : 'Recibiste este correo porque figurás en la lista de invitados de este evento.'
+
 const asuntoGrupo = (modo, evento) => {
-  if (modo === 'ampliacion') return `Entradas adicionales para ${evento.nombre_evento}`
-  if (modo === 'reenvio') return `Reenvío de tus entradas para ${evento.nombre_evento}`
-  return `Tus entradas para ${evento.nombre_evento}`
+  const que = esCompra(evento) ? 'entradas' : 'invitaciones'
+  if (modo === 'ampliacion') return `${que === 'entradas' ? 'Entradas adicionales' : 'Invitaciones adicionales'} para ${evento.nombre_evento}`
+  if (modo === 'reenvio') return `Reenvío de tus ${que} para ${evento.nombre_evento}`
+  return `Tus ${que} para ${evento.nombre_evento}`
 }
 
 const generarHtmlGrupo = (grupo, entradas, evento, { modo, total }) => `
@@ -296,7 +310,7 @@ const generarHtmlGrupo = (grupo, entradas, evento, { modo, total }) => `
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
     <p style="color: #6b7280; font-size: 13px; margin: 0;">
       Salón Alto Belgrano — Mendoza, Argentina<br/>
-      Recibiste este correo porque compraste entradas para este evento.
+      ${escaparHtml(piePorQue(evento))}
     </p>
   </div>
 `
@@ -316,7 +330,7 @@ ${entradas.map(e => `  · entrada-${e.numero}-de-${total}.png — ${etiquetaTipo
 
 --
 Salón Alto Belgrano — Mendoza, Argentina
-Recibiste este correo porque compraste entradas para este evento.`
+${piePorQue(evento)}`
 
 // entradas: [{ id, qr_token, numero, tipo_entrada }], solo las que van en este
 // correo. total: cantidad total de entradas de la familia (para el "3 de 7").
