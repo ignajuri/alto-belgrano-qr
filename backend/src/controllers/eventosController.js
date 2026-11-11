@@ -187,6 +187,87 @@ const listarEventosActivos = async (req, res) => {
   }
 }
 
+// Lista de control para la puerta: quién ingresó y quién falta en un evento.
+// La pueden ver los guardias, así que devuelve solo lo necesario para
+// controlar el ingreso: nombres, número y tipo de entrada, y hora de ingreso.
+// Nunca correos, teléfonos, DNI ni tokens de QR.
+//
+// Un guardia solo puede abrirla para un evento que esté dentro de su ventana
+// de validación (los mismos que ve en el escáner); el administrador, siempre.
+const listaControl = async (req, res) => {
+  const { id } = req.params
+
+  if (!esUuid(id)) {
+    return res.status(400).json({ error: 'Identificador de evento inválido' })
+  }
+
+  try {
+    const { data: evento } = await supabase
+      .from('eventos')
+      .select('id, nombre_evento, fecha, tipo, inicio_baile')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (!evento) {
+      return res.status(404).json({ error: 'Evento no encontrado' })
+    }
+
+    if (req.usuario.rol !== 'admin') {
+      const { desde, hasta } = calcularVentana(evento.fecha)
+      const ahora = new Date()
+      if (ahora < desde || ahora > hasta) {
+        return res.status(403).json({ error: 'La lista solo está disponible mientras el evento está activo' })
+      }
+    }
+
+    const { data: filas, error } = await supabase
+      .from('invitados')
+      .select('id, nombre, apellido, ingresado, fecha_ingreso, grupo_id, numero, tipo_entrada, grupos(nombre)')
+      .eq('evento_id', id)
+      .order('numero', { ascending: true })
+
+    if (error) throw error
+
+    const total = filas.length
+    const ingresados = filas.filter(f => f.ingresado).length
+    const base = {
+      evento: { id: evento.id, nombre_evento: evento.nombre_evento, fecha: evento.fecha, tipo: evento.tipo, inicio_baile: evento.inicio_baile },
+      resumen: { total, ingresados }
+    }
+
+    if (evento.tipo !== 'egresados') {
+      const invitados = filas
+        .map(f => ({ id: f.id, nombre: f.nombre, apellido: f.apellido, ingresado: f.ingresado, fecha_ingreso: f.fecha_ingreso }))
+        .sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`, 'es'))
+      return res.json({ ...base, invitados })
+    }
+
+    const porGrupo = new Map()
+    for (const f of filas) {
+      if (!f.grupo_id) continue
+      if (!porGrupo.has(f.grupo_id)) {
+        porGrupo.set(f.grupo_id, { id: f.grupo_id, nombre: f.grupos?.nombre || f.nombre, entradas: [] })
+      }
+      porGrupo.get(f.grupo_id).entradas.push({
+        id: f.id, numero: f.numero, tipo_entrada: f.tipo_entrada, ingresado: f.ingresado, fecha_ingreso: f.fecha_ingreso
+      })
+    }
+
+    const grupos = [...porGrupo.values()]
+      .map(g => ({
+        ...g,
+        total: g.entradas.reduce((m, e) => Math.max(m, e.numero || 0), 0),
+        ingresados: g.entradas.filter(e => e.ingresado).length
+      }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+
+    res.json({ ...base, grupos })
+  } catch (error) {
+    console.error('Error al obtener la lista de control:', error)
+    res.status(500).json({ error: 'Error al obtener la lista de invitados' })
+  }
+}
+
 const obtenerEvento = async (req, res) => {
   const { id } = req.params
   if (!esUuid(id)) return res.status(400).json({ error: 'Identificador inválido' })
@@ -240,6 +321,7 @@ module.exports = {
   editarEvento,
   listarEventos,
   listarEventosActivos,
+  listaControl,
   obtenerEvento,
   eliminarEvento
 }

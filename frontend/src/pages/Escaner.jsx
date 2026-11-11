@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import api, { cerrarSesionLocal } from '../services/api'
 import CampoPassword from '../components/CampoPassword'
+import ListaGuardia from './ListaGuardia'
 
 // SVG inline (la CSP no permite iconos de un CDN). Los tres cuadrados de las
 // esquinas son los patrones de posición que todo QR tiene; el resto son módulos
@@ -285,6 +286,10 @@ export default function Escaner() {
                       disabled={!eventoId}>
                       📷 Activar cámara
                     </button>
+                    <button onClick={() => setVista('lista')} disabled={!eventoId}
+                      style={eventoId ? es.btnLista : es.btnListaDeshabilitado}>
+                      📋 Ver lista de invitados
+                    </button>
                   </>
                 )}
               </div>
@@ -357,6 +362,10 @@ export default function Escaner() {
               </div>
             )}
           </div>
+        )}
+
+        {vista === 'lista' && eventoId && (
+          <ListaGuardia eventoId={eventoId} formatearHora={formatearHora} onVolver={() => setVista('escaner')} />
         )}
 
         {vista === 'perfil' && (
@@ -438,6 +447,8 @@ const es = {
   idleTitulo: { fontSize: '20px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px' },
   idleDesc: { fontSize: '14px', color: '#64748b', margin: '0 0 28px', lineHeight: 1.6 },
   btnEscanear: { width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+  btnLista: { width: '100%', marginTop: '10px', padding: '13px', backgroundColor: 'white', color: '#1d4ed8', border: '1.5px solid #bfdbfe', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+  btnListaDeshabilitado: { width: '100%', marginTop: '10px', padding: '13px', backgroundColor: 'white', color: '#94a3b8', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'not-allowed' },
   btnEscanearDeshabilitado: { width: '100%', padding: '14px', backgroundColor: '#cbd5e1', color: '#64748b', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'not-allowed' },
   campoEvento: { marginBottom: '20px', textAlign: 'left' },
   avisoSinEventos: { backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '10px', padding: '16px', textAlign: 'left' },
