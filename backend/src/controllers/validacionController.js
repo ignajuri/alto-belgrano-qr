@@ -14,7 +14,7 @@ const formatearHora = (fechaHora) =>
 // egresados: la familia, qué entrada es ("3 de 5") y si es de cena o de baile.
 const armarDetalle = async (invitado) => {
   if (!invitado.grupo_id) {
-    return { nombre: invitado.nombre, apellido: invitado.apellido }
+    return { nombre: invitado.nombre, apellido: invitado.apellido, tipo_entrada: invitado.tipo_entrada }
   }
 
   const { data: hermanas } = await supabase

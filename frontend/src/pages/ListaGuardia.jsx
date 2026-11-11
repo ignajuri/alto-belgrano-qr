@@ -40,7 +40,8 @@ export default function ListaGuardia({ eventoId, formatearHora, onVolver }) {
     return () => { vivo = false; clearInterval(intervalo) }
   }, [eventoId, refresco])
 
-  const esEgresados = datos?.evento.tipo === 'egresados'
+  // Por familia: egresados, o un casamiento configurado así.
+  const esEgresados = (datos?.evento.modo_carga || (datos?.evento.tipo === 'egresados' ? 'familia' : 'individual')) === 'familia'
   const q = busqueda.trim().toLowerCase()
 
   const cumpleFiltro = (ingresado) =>
@@ -136,6 +137,7 @@ export default function ListaGuardia({ eventoId, formatearHora, onVolver }) {
                 {invitados.map(i => (
                   <div key={i.id} style={ls.invitado}>
                     <span style={ls.invitadoNombre}>{i.apellido}, {i.nombre}</span>
+                    <span style={i.tipo_entrada === 'baile' ? ls.tipoBaile : ls.tipoCena}>{textoTipo(i.tipo_entrada)}</span>
                     <span style={i.ingresado ? ls.estadoOk : ls.estadoFalta}>
                       {i.ingresado ? `✓ ${i.fecha_ingreso ? formatearHora(i.fecha_ingreso) : ''}` : 'Falta'}
                     </span>

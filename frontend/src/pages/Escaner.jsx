@@ -314,13 +314,13 @@ export default function Escaner() {
                   <div style={es.detalleBox}>
                     {/* Egresados: familia, número de entrada y tipo, bien
                         visible para que el guardia distinga cena de baile. */}
+                    {resultado.detalle.tipo_entrada && (
+                      <div style={resultado.detalle.tipo_entrada === 'baile' ? es.tipoBaile : es.tipoCena}>
+                        {resultado.detalle.tipo_entrada === 'baile' ? '🎶 SOLO BAILE' : '🍽️ CENA + BAILE'}
+                      </div>
+                    )}
                     {resultado.detalle.grupo ? (
                       <>
-                        {resultado.detalle.tipo_entrada && (
-                          <div style={resultado.detalle.tipo_entrada === 'cena' ? es.tipoCena : es.tipoBaile}>
-                            {resultado.detalle.tipo_entrada === 'cena' ? '🍽️ CENA + BAILE' : '🎶 SOLO BAILE'}
-                          </div>
-                        )}
                         <div style={es.detalleItem}>
                           <span style={es.detalleKey}>Familia</span>
                           <span style={es.detalleVal}>{resultado.detalle.grupo}</span>

@@ -1,11 +1,25 @@
 const ExcelJS = require('exceljs')
 const {
-  normalizarEmail, esEmailValido, normalizarDni, esDniValido, texto, enteroNoNegativo
+  normalizarEmail, esEmailValido, normalizarDni, esDniValido, texto, enteroNoNegativo,
+  normalizarTipoEntrada
 } = require('../utils/validacion')
 
 const MAX_FILAS = 2000
 
-const COLUMNAS = ['nombre', 'apellido', 'dni', 'email']
+// Encabezado → campo, para el Excel de invitados individuales. La columna de
+// tipo de entrada es opcional: si no está o está vacía, la entrada es
+// "cena + baile", así que las planillas de antes siguen sirviendo.
+const ALIAS_INVITADOS = {
+  nombre: 'nombre', apellido: 'apellido', dni: 'dni', documento: 'dni',
+  email: 'email', correo: 'email', mail: 'email', 'e-mail': 'email',
+  entrada: 'entrada', tipo: 'entrada', 'tipo de entrada': 'entrada', tipo_entrada: 'entrada'
+}
+
+// Clave para detectar a la misma persona en dos cargas. Con DNI, el DNI. Sin
+// DNI (casamientos), nombre + apellido + correo: una pareja que comparte el
+// correo sigue siendo dos personas distintas.
+const clavePersona = ({ dni, nombre, apellido, email }) =>
+  dni ? `dni:${dni}` : `np:${String(nombre).toLowerCase()}|${String(apellido).toLowerCase()}|${String(email).toLowerCase()}`
 
 // ExcelJS devuelve objetos para celdas con hipervínculo o texto enriquecido.
 // Esta función las aplana siempre a string.
@@ -23,7 +37,7 @@ const celdaATexto = (valor) => {
 
 // Reemplaza a SheetJS 0.18.5, que arrastra prototype pollution (CVE-2023-30533)
 // y ReDoS (CVE-2024-22363) sin parche disponible en npm.
-const leerInvitados = async (buffer) => {
+const leerInvitados = async (buffer, { dniObligatorio = true } = {}) => {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
 
@@ -32,17 +46,21 @@ const leerInvitados = async (buffer) => {
     return { error: 'El archivo no contiene ninguna hoja' }
   }
 
-  // Mapeo de encabezados: acepta las columnas en cualquier orden.
+  // Mapeo de encabezados: acepta las columnas en cualquier orden y con
+  // variantes comunes ("Correo", "Tipo de entrada").
   const encabezados = {}
-  const filaEncabezado = hoja.getRow(1)
-  filaEncabezado.eachCell((celda, col) => {
-    const nombre = celdaATexto(celda.value).trim().toLowerCase()
-    if (COLUMNAS.includes(nombre)) encabezados[nombre] = col
+  hoja.getRow(1).eachCell((celda, col) => {
+    const campo = ALIAS_INVITADOS[normalizarEncabezado(celda.value)]
+    if (campo && !encabezados[campo]) encabezados[campo] = col
   })
 
-  const faltantes = COLUMNAS.filter(c => !encabezados[c])
+  const obligatorias = dniObligatorio ? ['nombre', 'apellido', 'dni', 'email'] : ['nombre', 'apellido', 'email']
+  const faltantes = obligatorias.filter(c => !encabezados[c])
   if (faltantes.length > 0) {
-    return { error: `El Excel debe tener las columnas: ${COLUMNAS.join(', ')}. Faltan: ${faltantes.join(', ')}` }
+    return {
+      error: `El Excel debe tener las columnas: ${obligatorias.join(', ')}` +
+             `${dniObligatorio ? '' : ', dni (opcional)'}, entrada (opcional). Faltan: ${faltantes.join(', ')}`
+    }
   }
 
   const filasTotales = hoja.rowCount - 1
@@ -52,34 +70,46 @@ const leerInvitados = async (buffer) => {
 
   const errores = []
   const invitados = []
-  const dnisEnArchivo = new Set()
+  const personasEnArchivo = new Map()
 
   for (let n = 2; n <= hoja.rowCount; n++) {
     const fila = hoja.getRow(n)
-    const leer = (col) => celdaATexto(fila.getCell(encabezados[col]).value).trim()
+    const leer = (col) => encabezados[col]
+      ? celdaATexto(fila.getCell(encabezados[col]).value).trim()
+      : ''
 
     const nombre = texto(leer('nombre'), 120)
     const apellido = texto(leer('apellido'), 120)
     const dni = normalizarDni(leer('dni'))
     const email = normalizarEmail(leer('email'))
+    const entradaTxt = leer('entrada')
 
     // Fila completamente vacía: la salteamos sin reportar error.
-    if (!nombre && !apellido && !dni && !email) continue
+    if (!nombre && !apellido && !dni && !email && !entradaTxt) continue
 
     if (!nombre) { errores.push(`Fila ${n}: falta el nombre`); continue }
     if (!apellido) { errores.push(`Fila ${n}: falta el apellido`); continue }
-    if (!dni) { errores.push(`Fila ${n}: falta el DNI`); continue }
-    if (!esDniValido(dni)) { errores.push(`Fila ${n}: el DNI "${dni}" no es válido`); continue }
+    if (!dni && dniObligatorio) { errores.push(`Fila ${n}: falta el DNI`); continue }
+    if (dni && !esDniValido(dni)) { errores.push(`Fila ${n}: el DNI "${dni}" no es válido`); continue }
     if (!email) { errores.push(`Fila ${n}: falta el email`); continue }
     if (!esEmailValido(email)) { errores.push(`Fila ${n}: el email "${email}" no es válido`); continue }
 
-    if (dnisEnArchivo.has(dni)) {
-      errores.push(`Fila ${n}: el DNI ${dni} está repetido dentro del archivo`)
+    const tipo_entrada = normalizarTipoEntrada(entradaTxt)
+    if (!tipo_entrada) {
+      errores.push(`Fila ${n}: la entrada "${entradaTxt}" no es válida (escribí "cena" o "baile", o dejala vacía para cena + baile)`)
       continue
     }
-    dnisEnArchivo.add(dni)
 
-    invitados.push({ nombre, apellido, dni, email })
+    const clave = clavePersona({ dni, nombre, apellido, email })
+    if (personasEnArchivo.has(clave)) {
+      errores.push(dni
+        ? `Fila ${n}: el DNI ${dni} está repetido dentro del archivo (fila ${personasEnArchivo.get(clave)})`
+        : `Fila ${n}: ${nombre} ${apellido} ya aparece en la fila ${personasEnArchivo.get(clave)} con el mismo email`)
+      continue
+    }
+    personasEnArchivo.set(clave, n)
+
+    invitados.push({ nombre, apellido, dni: dni || null, email, tipo_entrada })
   }
 
   // Solo devolvemos las primeras 20 líneas de error para no generar una
@@ -183,4 +213,4 @@ const leerGrupos = async (buffer) => {
   return { grupos, errores: errores.slice(0, 20), totalErrores: errores.length }
 }
 
-module.exports = { leerInvitados, leerGrupos, MAX_FILAS, MAX_ENTRADAS_POR_FAMILIA }
+module.exports = { leerInvitados, leerGrupos, clavePersona, MAX_FILAS, MAX_ENTRADAS_POR_FAMILIA }

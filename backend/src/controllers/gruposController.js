@@ -9,20 +9,21 @@ const COD_DUPLICADO = '23505'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-// Trae el evento y verifica que sea de egresados y que siga teniendo datos.
+// Trae el evento y verifica que cargue invitados por familia (egresados, o un
+// casamiento configurado así).
 // Devuelve { evento } o { status, error } para responder directamente.
 const obtenerEventoEgresados = async (eventoId) => {
   if (!esUuid(eventoId)) return { status: 400, error: 'Identificador de evento inválido' }
 
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, nombre_evento, fecha, tipo, inicio_baile, limite_invitados, datos_purgados_en')
+    .select('id, nombre_evento, fecha, tipo, modo_carga, inicio_baile, limite_invitados, datos_purgados_en')
     .eq('id', eventoId)
     .maybeSingle()
 
   if (!evento) return { status: 404, error: 'Evento no encontrado' }
-  if (evento.tipo !== 'egresados') {
-    return { status: 400, error: 'Este evento no es una fiesta de egresados' }
+  if (evento.modo_carga !== 'familia') {
+    return { status: 400, error: 'Este evento carga a los invitados de forma individual, no por familia' }
   }
   return { evento }
 }

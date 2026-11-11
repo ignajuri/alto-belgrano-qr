@@ -417,7 +417,7 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
 
       {grupos.length === 0 ? (
         <div style={e.emptyState}>
-          <div style={e.emptyIcon}>🎓</div>
+          <div style={e.emptyIcon}>{evento.tipo === 'egresados' ? '🎓' : '👨‍👩‍👧'}</div>
           <p style={e.emptyTitulo}>No hay familias cargadas</p>
           <p style={e.emptyDesc}>Descargá la plantilla, completala con lo vendido y subila.</p>
         </div>
