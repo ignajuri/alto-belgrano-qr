@@ -158,11 +158,10 @@ export default function Dashboard() {
     return () => clearInterval(intervalo)
   }, [vistaActual, eventoSeleccionado])
 
-  // Los avisos de éxito se cierran solos a los 3 s. Los de error quedan 2
-  // minutos (o hasta cerrarlos con la ✕) para que dé tiempo a leer, por
-  // ejemplo, la lista de filas con problemas de un Excel.
-  const DURACION_EXITO_MS = 3000
-  const DURACION_ERROR_MS = 2 * 60 * 1000
+  // Todos los avisos (éxito y error) quedan 2 minutos o hasta cerrarlos con la
+  // ✕, para que dé tiempo a leerlos: por ejemplo, el resumen de una
+  // importación o la lista de filas con problemas de un Excel.
+  const DURACION_MENSAJE_MS = 2 * 60 * 1000
 
   const cerrarMensaje = () => {
     clearTimeout(temporizadorMensaje.current)
@@ -175,7 +174,7 @@ export default function Dashboard() {
     // para que no cierre el aviso nuevo antes de tiempo.
     clearTimeout(temporizadorMensaje.current)
     setMensaje({ texto, detalle, esError })
-    temporizadorMensaje.current = setTimeout(() => setMensaje(null), esError ? DURACION_ERROR_MS : DURACION_EXITO_MS)
+    temporizadorMensaje.current = setTimeout(() => setMensaje(null), DURACION_MENSAJE_MS)
   }
 
   useEffect(() => () => clearTimeout(temporizadorMensaje.current), [])
