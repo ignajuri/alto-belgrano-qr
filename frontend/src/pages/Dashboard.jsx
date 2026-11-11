@@ -1112,6 +1112,7 @@ export default function Dashboard() {
                   {item.label}
                 </button>
               ))}
+              <button onClick={() => navigate('/escanear')} style={e.mobileMenuItem}>📷 Ir al escáner</button>
               <button onClick={handleNavPerfil} style={e.mobileMenuItem}>👤 Mi perfil</button>
               <button onClick={cerrarSesion} style={e.mobileMenuSalir}>Cerrar sesión</button>
             </div>
@@ -1142,6 +1143,11 @@ export default function Dashboard() {
           </button>
           <button onClick={() => { setVistaActual('usuarios'); cargarUsuarios() }} style={navActivo('usuarios') ? e.navItemActivo : e.navItem}>
             <span>👤</span> Usuarios
+          </button>
+          <div style={e.navSeparador} />
+          {/* Vista de guardia con la misma cuenta, sin cerrar sesión. */}
+          <button onClick={() => navigate('/escanear')} style={e.navItem}>
+            <span>📷</span> Ir al escáner
           </button>
         </nav>
         <div style={e.sidebarFooter}>
@@ -1181,6 +1187,7 @@ const e = {
   sidebarLogoCircle: { width: '36px', height: '36px', backgroundColor: '#3b82f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '13px', flexShrink: 0 },
   sidebarNombre: { color: 'white', fontSize: '14px', fontWeight: '600', margin: 0, lineHeight: 1.3 },
   sidebarSub: { color: 'rgba(255,255,255,0.45)', fontSize: '11px', margin: '2px 0 0' },
+  navSeparador: { height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '8px 4px' },
   sidebarNav: { flex: 1, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '2px' },
   navItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: '14px', border: 'none', background: 'none', width: '100%', textAlign: 'left', borderRadius: '8px' },
   navItemActivo: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', color: 'white', cursor: 'pointer', fontSize: '14px', border: 'none', background: 'rgba(59,130,246,0.25)', width: '100%', textAlign: 'left', borderRadius: '8px', fontWeight: '500' },

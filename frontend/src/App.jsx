@@ -3,6 +3,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Escaner from './pages/Escaner'
 import Recuperar from './pages/Recuperar'
+import ElegirVista from './pages/ElegirVista'
 
 const leerUsuario = () => {
   try {
@@ -34,7 +35,7 @@ const Inicio = () => {
   const token = sessionStorage.getItem('token')
   if (!token) return <Navigate to="/login" replace />
   const usuario = leerUsuario()
-  return <Navigate to={usuario.rol === 'admin' ? '/dashboard' : '/escanear'} replace />
+  return <Navigate to={usuario.rol === 'admin' ? '/elegir' : '/escanear'} replace />
 }
 
 function App() {
@@ -47,6 +48,12 @@ function App() {
             mostrar según venga o no un token en la URL. */}
         <Route path="/recuperar" element={<Recuperar />} />
         <Route path="/restablecer" element={<Recuperar />} />
+        {/* Solo admins: eligen entre el panel y la vista de guardia. */}
+        <Route path="/elegir" element={
+          <RutaPrivada rol="admin">
+            <ElegirVista />
+          </RutaPrivada>
+        } />
         <Route path="/dashboard" element={
           <RutaPrivada rol="admin">
             <Dashboard />

@@ -33,8 +33,9 @@ export default function Login() {
       const res = await api.post('/auth/login', { email, password })
       sessionStorage.setItem('token', res.data.token)
       sessionStorage.setItem('usuario', JSON.stringify(res.data.usuario))
+      // Los admins eligen a qué vista entrar; los guardias van directo al escáner.
       if (res.data.usuario.rol === 'admin') {
-        navigate('/dashboard')
+        navigate('/elegir')
       } else {
         navigate('/escanear')
       }
