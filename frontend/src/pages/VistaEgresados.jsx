@@ -23,6 +23,10 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
   // Previsualización de la importación: { archivo, resumen, acciones }
   const [previa, setPrevia] = useState(null)
   const [grupoEditando, setGrupoEditando] = useState(null)
+  // Carga manual: { modo: 'nueva' } para una familia nueva, o
+  // { modo: 'sumar', grupo } para agregarle entradas a una ya cargada.
+  const [cargaManual, setCargaManual] = useState(null)
+  const [formCarga, setFormCarga] = useState({ nombre: '', email: '', telefono: '', cena: '1', baile: '0' })
   const [formGrupo, setFormGrupo] = useState({ nombre: '', email: '', telefono: '' })
 
   const base = `/eventos/${evento.id}`
@@ -128,6 +132,52 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
     } finally { setOcupado(null) }
   }
 
+  // ── Carga manual (sin Excel) ──────────────────────────────────────────────
+
+  const abrirNuevaFamilia = () => {
+    setFormCarga({ nombre: '', email: '', telefono: '', cena: '1', baile: '0' })
+    setCargaManual({ modo: 'nueva' })
+  }
+
+  const abrirSumarEntradas = (g) => {
+    setFormCarga({ nombre: g.nombre, email: g.email, telefono: g.telefono || '', cena: '1', baile: '0' })
+    setCargaManual({ modo: 'sumar', grupo: g })
+  }
+
+  const guardarCargaManual = async (ev) => {
+    ev.preventDefault()
+    setCargando(true)
+    try {
+      const cantidades = { cena: Number(formCarga.cena) || 0, baile: Number(formCarga.baile) || 0 }
+      const res = cargaManual.modo === 'nueva'
+        ? await api.post(`${base}/grupos`, { ...formCarga, ...cantidades })
+        : await api.post(`${base}/grupos/${cargaManual.grupo.id}/entradas`, cantidades)
+      setCargaManual(null)
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
+      await cargarGrupos()
+    } catch (err) {
+      error(err, cargaManual.modo === 'nueva' ? 'no se pudo agregar la familia' : 'no se pudieron sumar las entradas')
+    } finally { setCargando(false) }
+  }
+
+  // Pasa una entrada de "cena + baile" a "solo baile" o al revés. El QR no
+  // cambia: el escáner lee el tipo actualizado.
+  const cambiarTipo = async (g, entrada) => {
+    const nuevo = entrada.tipo_entrada === 'baile' ? 'cena' : 'baile'
+    if (!window.confirm(
+      `¿Cambiar la entrada ${entrada.numero} de ${g.nombre} a «${textoTipo(nuevo)}»?\n\n` +
+      'El QR sigue siendo el mismo y pasa a valer según el tipo nuevo.'
+    )) return
+    setOcupado(entrada.id)
+    try {
+      const res = await api.put(`${base}/grupos/${g.id}/entradas/${entrada.id}`, { tipo_entrada: nuevo })
+      mostrarMensaje(`✓ ${res.data.mensaje}`)
+      await cargarGrupos()
+    } catch (err) {
+      error(err, 'no se pudo cambiar el tipo de entrada')
+    } finally { setOcupado(null) }
+  }
+
   const abrirEdicion = (g) => {
     setFormGrupo({ nombre: g.nombre, email: g.email, telefono: g.telefono || '' })
     setGrupoEditando(g)
@@ -209,6 +259,7 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
       <button onClick={() => setAbierto(abierto === g.id ? null : g.id)} style={e.btnAccionVioleta}>
         {abierto === g.id ? 'Ocultar' : 'Entradas'}
       </button>
+      <button onClick={() => abrirSumarEntradas(g)} style={e.btnAccionVioleta}>+ Entradas</button>
       <button onClick={() => abrirEdicion(g)} style={e.btnAccionVioleta}>Editar</button>
       <button onClick={() => reenviarGrupo(g)} style={e.btnAccionAzul} disabled={ocupado === g.id}>
         {ocupado === g.id ? 'Enviando...' : 'Reenviar'}
@@ -231,6 +282,9 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
           </div>
           <div style={e.accionesInvitado}>
             <button onClick={() => reenviarEntrada(en)} style={e.btnAccionAzul} disabled={ocupado === en.id}>Reenviar</button>
+            <button onClick={() => cambiarTipo(g, en)} style={e.btnAccionVioleta} disabled={ocupado === en.id}>
+              {en.tipo_entrada === 'baile' ? 'Pasar a cena + baile' : 'Pasar a solo baile'}
+            </button>
             {en.ingresado && (
               <button onClick={() => deshacerIngreso(g, en)} style={e.btnAccionAmbar} disabled={ocupado === en.id}>Deshacer ingreso</button>
             )}
@@ -323,6 +377,65 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
         </div>
       )}
 
+      {/* Modal carga manual: familia nueva o sumar entradas */}
+      {cargaManual && (
+        <div style={e.modalOverlay}>
+          <div style={e.modal}>
+            <div style={e.modalHeader}>
+              <h3 style={e.modalTitulo}>
+                {cargaManual.modo === 'nueva' ? 'Agregar familia' : `Sumar entradas a ${cargaManual.grupo.nombre}`}
+              </h3>
+              <button type="button" onClick={() => setCargaManual(null)} style={e.modalClose}>✕</button>
+            </div>
+            <form onSubmit={guardarCargaManual}>
+              <div style={e.modalBody}>
+                {cargaManual.modo === 'nueva' ? (
+                  [
+                    { label: 'Familia', key: 'nombre', type: 'text', placeholder: 'Ej: Familia Pérez' },
+                    { label: 'Email', key: 'email', type: 'email', placeholder: 'perez@gmail.com' },
+                    { label: 'Teléfono', key: 'telefono', type: 'text', placeholder: 'Opcional', opcional: true },
+                  ].map(({ label, key, type, placeholder, opcional }) => (
+                    <div key={key} style={e.campo}>
+                      <label style={e.label}>{label} {opcional && <span style={e.opcional}>(opcional)</span>}</label>
+                      <input type={type} value={formCarga[key]} placeholder={placeholder} required={!opcional} style={e.input}
+                        onChange={ev => setFormCarga({ ...formCarga, [key]: ev.target.value })} />
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ ...e.ayuda, marginTop: 0 }}>
+                    Hoy tiene {cargaManual.grupo.cena} de cena + baile y {cargaManual.grupo.baile} de solo baile.
+                    Las nuevas se numeran a continuación y le llegan en un correo aparte; las que ya tenía siguen valiendo.
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {[
+                    { label: 'Cena + baile', key: 'cena' },
+                    { label: 'Solo baile', key: 'baile' },
+                  ].map(({ label, key }) => (
+                    <div key={key} style={{ ...e.campo, flex: 1 }}>
+                      <label style={e.label}>{label}</label>
+                      <input type="number" min="0" max="30" value={formCarga[key]} required style={e.input}
+                        onChange={ev => setFormCarga({ ...formCarga, [key]: ev.target.value })} />
+                    </div>
+                  ))}
+                </div>
+                <p style={e.ayuda}>
+                  {cargaManual.modo === 'nueva'
+                    ? 'Al guardar, la familia recibe todos sus QR en un solo correo.'
+                    : 'Si la familia también figura en tu Excel, actualizá ahí la cantidad para que coincida la próxima vez que lo subas.'}
+                </p>
+              </div>
+              <div style={e.modalBotones}>
+                <button type="button" onClick={() => setCargaManual(null)} style={e.btnSecundario}>Cancelar</button>
+                <button type="submit" style={e.btnPrimario} disabled={cargando}>
+                  {cargando ? 'Guardando...' : cargaManual.modo === 'nueva' ? 'Agregar y enviar QR' : 'Sumar y enviar QR'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal editar familia */}
       {grupoEditando && (
         <div style={e.modalOverlay}>
@@ -385,7 +498,7 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
           {!isMobile && (
             <p style={e.importarDesc}>
               Excel (.xlsx) con columnas: familia, email, telefono (opcional), cena, baile. Podés volver a subirlo
-              actualizado: solo se agregan y envían las entradas nuevas.
+              actualizado: solo se agregan y envían las entradas nuevas. También podés agregar familias de a una.
             </p>
           )}
         </div>
@@ -400,6 +513,10 @@ export default function VistaEgresados({ evento, isMobile, e, mostrarMensaje, fo
               Reenviar pendientes ({pendientesEnvio})
             </button>
           )}
+          <button onClick={abrirNuevaFamilia} disabled={cargando}
+            style={isMobile ? { ...e.btnSecundario, flex: 1 } : e.btnSecundario}>
+            Agregar familia
+          </button>
           <input type="file" accept=".xlsx" id="file-egresados" onChange={previsualizar}
             style={{ display: 'none' }} disabled={cargando} />
           <label htmlFor="file-egresados"

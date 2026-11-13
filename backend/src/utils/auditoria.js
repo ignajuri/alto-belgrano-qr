@@ -50,7 +50,10 @@ const ACCIONES = {
   GRUPOS_IMPORTADOS: 'grupos_importados',
   GRUPO_EDITADO: 'grupo_editado',
   GRUPO_ELIMINADO: 'grupo_eliminado',
-  PENDIENTES_REENVIADOS: 'pendientes_reenviados'
+  PENDIENTES_REENVIADOS: 'pendientes_reenviados',
+  GRUPO_CREADO: 'grupo_creado',
+  ENTRADAS_AGREGADAS: 'entradas_agregadas',
+  ENTRADA_EDITADA: 'entrada_editada'
 }
 
 module.exports = { registrar, obtenerIp, ACCIONES }

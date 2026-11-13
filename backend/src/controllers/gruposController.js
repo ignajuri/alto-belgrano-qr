@@ -1,9 +1,11 @@
 const supabase = require('../config/supabase')
-const { leerGrupos } = require('../services/excelService')
+const { leerGrupos, MAX_ENTRADAS_POR_FAMILIA } = require('../services/excelService')
 const { planificarImportacion, ESTADOS } = require('../services/planImportacion')
 const { enviarEntradasGrupo, enviarGruposEnLote } = require('../services/emailService')
 const { registrar, ACCIONES } = require('../utils/auditoria')
-const { esUuid, texto, normalizarEmail, esEmailValido } = require('../utils/validacion')
+const {
+  esUuid, texto, normalizarEmail, esEmailValido, enteroNoNegativo, normalizarTipoEntrada
+} = require('../utils/validacion')
 
 const COD_DUPLICADO = '23505'
 
@@ -72,6 +74,56 @@ const parsearGrupo = (body) => {
   return { datos: { nombre, email, telefono: telefono || null } }
 }
 
+// Cantidades de cena y baile de un formulario. `minimoUna`: al menos una entrada.
+const parsearCantidades = (body) => {
+  const cena = enteroNoNegativo(body?.cena, MAX_ENTRADAS_POR_FAMILIA)
+  const baile = enteroNoNegativo(body?.baile, MAX_ENTRADAS_POR_FAMILIA)
+  if (cena === null || baile === null) {
+    return { error: `Las cantidades tienen que ser números enteros de 0 a ${MAX_ENTRADAS_POR_FAMILIA}` }
+  }
+  if (cena + baile === 0) return { error: 'Indicá al menos una entrada de cena o de baile' }
+  return { cena, baile }
+}
+
+// Crea las entradas de una familia a continuación de las que ya tiene
+// (cena primero y después baile, como en la importación). Devuelve las filas
+// creadas, con su token, para mandarlas por correo.
+const crearEntradas = async ({ evento, grupoId, nombre, email, cena, baile, desde }) => {
+  let n = desde
+  const filas = [
+    ...Array.from({ length: cena }, () => 'cena'),
+    ...Array.from({ length: baile }, () => 'baile')
+  ].map(tipo_entrada => ({
+    evento_id: evento.id,
+    grupo_id: grupoId,
+    nombre,
+    apellido: null,
+    dni: null,
+    email,
+    tipo_entrada,
+    numero: ++n
+  }))
+
+  const { data: creadas, error } = await supabase
+    .from('invitados')
+    .insert(filas)
+    .select('id, qr_token, numero, tipo_entrada')
+  if (error) throw error
+  return { creadas, total: n }
+}
+
+// Cuántas entradas tiene el evento hoy, para no pasar el límite.
+const contarEntradasEvento = async (eventoId) => {
+  const { count, error } = await supabase
+    .from('invitados')
+    .select('id', { count: 'exact', head: true })
+    .eq('evento_id', eventoId)
+  if (error) throw error
+  return count || 0
+}
+
+const ERROR_PURGADO = 'Este evento ya pasó y sus datos personales fueron eliminados. No se pueden cargar entradas.'
+
 // ── Importación ─────────────────────────────────────────────────────────────
 
 // Se llama dos veces con el mismo archivo: primero con modo=previsualizar
@@ -88,9 +140,7 @@ const importarGrupos = async (req, res) => {
     if (error) return res.status(status).json({ error })
 
     if (evento.datos_purgados_en) {
-      return res.status(400).json({
-        error: 'Este evento ya pasó y sus datos personales fueron eliminados. No se pueden cargar entradas.'
-      })
+      return res.status(400).json({ error: ERROR_PURGADO })
     }
 
     const { grupos: filas, errores, totalErrores, error: errorLectura } = await leerGrupos(req.file.buffer)
@@ -152,27 +202,15 @@ const importarGrupos = async (req, res) => {
 
       if (accion.agregarCena + accion.agregarBaile === 0) continue
 
-      // Cena primero y después baile: así en el correo las de cena quedan arriba.
-      let n = maxNumero.get(grupoId) || 0
-      const filasEntradas = [
-        ...Array.from({ length: accion.agregarCena }, () => 'cena'),
-        ...Array.from({ length: accion.agregarBaile }, () => 'baile')
-      ].map(tipo_entrada => ({
-        evento_id: evento.id,
-        grupo_id: grupoId,
+      const { creadas, total: n } = await crearEntradas({
+        evento,
+        grupoId,
         nombre: accion.familia,
-        apellido: null,
-        dni: null,
         email: accion.email,
-        tipo_entrada,
-        numero: ++n
-      }))
-
-      const { data: creadas, error: errorEntradas } = await supabase
-        .from('invitados')
-        .insert(filasEntradas)
-        .select('id, qr_token, numero, tipo_entrada')
-      if (errorEntradas) throw errorEntradas
+        cena: accion.agregarCena,
+        baile: accion.agregarBaile,
+        desde: maxNumero.get(grupoId) || 0
+      })
 
       maxNumero.set(grupoId, n)
       envios.push({
@@ -349,6 +387,167 @@ const eliminarGrupo = async (req, res) => {
   }
 }
 
+// ── Carga manual (sin Excel) ────────────────────────────────────────────────
+
+// Agrega una familia desde el panel con sus entradas y le manda el correo.
+const crearGrupo = async (req, res) => {
+  const { datos, error: errorDatos } = parsearGrupo(req.body)
+  if (errorDatos) return res.status(400).json({ error: errorDatos })
+  const { cena, baile, error: errorCant } = parsearCantidades(req.body)
+  if (errorCant) return res.status(400).json({ error: errorCant })
+
+  try {
+    const { evento, status, error } = await obtenerEventoEgresados(req.params.id)
+    if (error) return res.status(status).json({ error })
+    if (evento.datos_purgados_en) return res.status(400).json({ error: ERROR_PURGADO })
+
+    const actuales = await contarEntradasEvento(evento.id)
+    if (actuales + cena + baile > evento.limite_invitados) {
+      return res.status(400).json({
+        error: `Se superaría el límite del evento (${evento.limite_invitados}). Ya hay ${actuales} entradas.`
+      })
+    }
+
+    const { data: grupo, error: errorGrupo } = await supabase
+      .from('grupos')
+      .insert([{ evento_id: evento.id, ...datos }])
+      .select('id, nombre, email, telefono')
+      .single()
+    if (errorGrupo) {
+      if (errorGrupo.code === COD_DUPLICADO) {
+        return res.status(409).json({
+          error: `Ya hay una familia con el email ${datos.email} en este evento. Para sumarle entradas, usá «Sumar entradas» en esa familia.`
+        })
+      }
+      throw errorGrupo
+    }
+
+    const { creadas, total } = await crearEntradas({
+      evento, grupoId: grupo.id, nombre: grupo.nombre, email: grupo.email, cena, baile, desde: 0
+    })
+
+    await registrar(req, ACCIONES.GRUPO_CREADO, {
+      entidad: 'grupos', entidadId: grupo.id, detalle: { evento_id: evento.id, cena, baile }
+    })
+
+    let enviado = true
+    try {
+      await enviarEntradasGrupo(grupo, creadas, evento, { modo: 'inicial', total })
+    } catch (errorEmail) {
+      enviado = false
+      console.error(`[email] falló el envío al grupo ${grupo.id}: ${errorEmail.message}`)
+    }
+
+    res.status(201).json({
+      mensaje: enviado
+        ? `${grupo.nombre} fue agregada con ${total} entrada(s) y su correo salió a ${grupo.email}.`
+        : `${grupo.nombre} fue agregada con ${total} entrada(s), pero falló el envío del correo. Usá «Reenviar».`,
+      grupo: { ...grupo, total }
+    })
+  } catch (error) {
+    console.error('Error al crear grupo:', error)
+    res.status(500).json({ error: 'Error al agregar la familia' })
+  }
+}
+
+// Suma entradas a una familia ya cargada. El correo trae solo las nuevas y
+// aclara que las anteriores siguen valiendo, igual que al volver a subir el Excel.
+const agregarEntradas = async (req, res) => {
+  const { grupoId } = req.params
+  if (!esUuid(grupoId)) return res.status(400).json({ error: 'Identificador inválido' })
+  const { cena, baile, error: errorCant } = parsearCantidades(req.body)
+  if (errorCant) return res.status(400).json({ error: errorCant })
+
+  try {
+    const { evento, status, error } = await obtenerEventoEgresados(req.params.id)
+    if (error) return res.status(status).json({ error })
+    if (evento.datos_purgados_en) return res.status(400).json({ error: ERROR_PURGADO })
+
+    const [grupo] = (await cargarGrupos(evento.id)).filter(g => g.id === grupoId)
+    if (!grupo) return res.status(404).json({ error: 'Familia no encontrada' })
+
+    if (grupo.entradas.length + cena + baile > MAX_ENTRADAS_POR_FAMILIA) {
+      return res.status(400).json({
+        error: `Una familia puede tener hasta ${MAX_ENTRADAS_POR_FAMILIA} entradas. ${grupo.nombre} ya tiene ${grupo.entradas.length}.`
+      })
+    }
+
+    const actuales = await contarEntradasEvento(evento.id)
+    if (actuales + cena + baile > evento.limite_invitados) {
+      return res.status(400).json({
+        error: `Se superaría el límite del evento (${evento.limite_invitados}). Ya hay ${actuales} entradas.`
+      })
+    }
+
+    const { creadas, total } = await crearEntradas({
+      evento, grupoId, nombre: grupo.nombre, email: grupo.email, cena, baile, desde: grupo.total
+    })
+
+    await registrar(req, ACCIONES.ENTRADAS_AGREGADAS, {
+      entidad: 'grupos', entidadId: grupoId, detalle: { evento_id: evento.id, cena, baile }
+    })
+
+    let enviado = true
+    try {
+      await enviarEntradasGrupo(grupo, creadas, evento, { modo: 'ampliacion', total })
+    } catch (errorEmail) {
+      enviado = false
+      console.error(`[email] falló el envío al grupo ${grupoId}: ${errorEmail.message}`)
+    }
+
+    const cantidad = cena + baile
+    res.status(201).json({
+      mensaje: enviado
+        ? `Se sumaron ${cantidad} entrada(s) a ${grupo.nombre} y le llegó un correo solo con las nuevas.`
+        : `Se sumaron ${cantidad} entrada(s) a ${grupo.nombre}, pero falló el envío del correo. Usá «Reenviar».`
+    })
+  } catch (error) {
+    console.error('Error al agregar entradas:', error)
+    res.status(500).json({ error: 'Error al agregar las entradas' })
+  }
+}
+
+// Cambia una entrada de "cena + baile" a "solo baile" o al revés. El QR es el
+// mismo: el escáner lee el tipo de la base, así que vale según el tipo nuevo
+// sin reenviar nada.
+const cambiarTipoEntrada = async (req, res) => {
+  const { grupoId, entradaId } = req.params
+  if (!esUuid(grupoId) || !esUuid(entradaId)) return res.status(400).json({ error: 'Identificador inválido' })
+  const tipo_entrada = normalizarTipoEntrada(req.body?.tipo_entrada)
+  if (!tipo_entrada || !String(req.body?.tipo_entrada ?? '').trim()) {
+    return res.status(400).json({ error: 'El tipo de entrada tiene que ser «cena» o «baile»' })
+  }
+
+  try {
+    const { evento, status, error } = await obtenerEventoEgresados(req.params.id)
+    if (error) return res.status(status).json({ error })
+
+    const { data: actualizadas, error: errorUpd } = await supabase
+      .from('invitados')
+      .update({ tipo_entrada })
+      .eq('id', entradaId)
+      .eq('grupo_id', grupoId)
+      .eq('evento_id', evento.id)
+      .select('id, numero, tipo_entrada')
+    if (errorUpd) throw errorUpd
+    if (!actualizadas?.length) return res.status(404).json({ error: 'Entrada no encontrada' })
+
+    await registrar(req, ACCIONES.ENTRADA_EDITADA, {
+      entidad: 'invitados', entidadId: entradaId, detalle: { evento_id: evento.id, tipo_entrada }
+    })
+
+    const e = actualizadas[0]
+    res.json({
+      mensaje: `La entrada ${e.numero} ahora es «${tipo_entrada === 'baile' ? 'Solo baile' : 'Cena + baile'}». ` +
+               'Su QR sigue sirviendo; si querés que la familia vea el tipo nuevo en el correo, reenviá esa entrada.',
+      entrada: e
+    })
+  } catch (error) {
+    console.error('Error al cambiar el tipo de entrada:', error)
+    res.status(500).json({ error: 'Error al cambiar el tipo de entrada' })
+  }
+}
+
 // Envía lo que quedó sin salir (por ejemplo, porque se agotó la cuota diaria
 // de Resend). Cada familia recibe solo sus entradas pendientes.
 const enviosPendientesDeGrupos = async (evento) => {
@@ -368,6 +567,9 @@ const enviosPendientesDeGrupos = async (evento) => {
 
 module.exports = {
   importarGrupos,
+  crearGrupo,
+  agregarEntradas,
+  cambiarTipoEntrada,
   listarGrupos,
   editarGrupo,
   reenviarGrupo,
