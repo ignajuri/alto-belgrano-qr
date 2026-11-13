@@ -24,6 +24,7 @@ Desarrollado como Práctica Profesional Supervisada de la Licenciatura en Sistem
 - **Fiesta de egresados:** una fila por familia (`familia`, `email`, `telefono`, `cena`, `baile`). Cada entrada tiene su propio QR y todas llegan juntas al correo de la familia, numeradas ("Entrada 3 de 5 · Cena + baile").
 - Las entradas de cena incluyen el baile; las de solo baile se rechazan antes de la hora de inicio del baile configurada en el evento.
 - El Excel de egresados se puede volver a subir actualizado: se muestra un resumen antes de confirmar y solo se crean y envían las entradas nuevas. Si una familia aparece con menos entradas, no se borra nada automáticamente.
+- Además del Excel, en los eventos por familia se puede **agregar una familia a mano**, **sumarle entradas** a una ya cargada (le llega un correo solo con las nuevas) y **cambiar una entrada** entre cena + baile y solo baile sin cambiar su QR.
 - "Reenviar pendientes" manda los correos que no salieron (por ejemplo, si se agotó la cuota diaria del proveedor de correo).
 
 **Control de acceso**
